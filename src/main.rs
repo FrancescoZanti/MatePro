@@ -4,6 +4,10 @@ use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
+use std::path::PathBuf;
+use std::fs;
+use lopdf::Document;
+use calamine::{Reader, open_workbook, Xlsx, Xls, Ods};
 
 #[derive(Debug, Serialize)]
 struct ChatRequest {
@@ -16,6 +20,8 @@ struct ChatRequest {
 struct Message {
     role: String,
     content: String,
+    #[serde(skip)]
+    hidden: bool,  // Se true, non mostrare nella chat UI
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,6 +156,107 @@ async fn scan_local_network() -> Vec<String> {
     servers
 }
 
+// Funzioni per estrarre testo dai file
+fn extract_text_from_pdf(path: &PathBuf) -> Result<String> {
+    let doc = Document::load(path)?;
+    let mut text = String::new();
+    
+    for page_num in 1..=doc.get_pages().len() {
+        if let Ok(page_text) = doc.extract_text(&[page_num as u32]) {
+            text.push_str(&page_text);
+            text.push('\n');
+        }
+    }
+    
+    if text.trim().is_empty() {
+        anyhow::bail!("Impossibile estrarre testo dal PDF");
+    }
+    
+    Ok(text)
+}
+
+fn extract_text_from_excel(path: &PathBuf) -> Result<String> {
+    let extension = path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    
+    let mut text = String::new();
+    
+    match extension.to_lowercase().as_str() {
+        "xlsx" => {
+            let mut workbook: Xlsx<_> = open_workbook(path)?;
+            for sheet_name in workbook.sheet_names() {
+                if let Ok(range) = workbook.worksheet_range(&sheet_name) {
+                    text.push_str(&format!("=== Foglio: {} ===\n", sheet_name));
+                    for row in range.rows() {
+                        let row_text: Vec<String> = row.iter()
+                            .map(|cell| format!("{}", cell))
+                            .collect();
+                        text.push_str(&row_text.join("\t"));
+                        text.push('\n');
+                    }
+                    text.push('\n');
+                }
+            }
+        }
+        "xls" => {
+            let mut workbook: Xls<_> = open_workbook(path)?;
+            for sheet_name in workbook.sheet_names() {
+                if let Ok(range) = workbook.worksheet_range(&sheet_name) {
+                    text.push_str(&format!("=== Foglio: {} ===\n", sheet_name));
+                    for row in range.rows() {
+                        let row_text: Vec<String> = row.iter()
+                            .map(|cell| format!("{}", cell))
+                            .collect();
+                        text.push_str(&row_text.join("\t"));
+                        text.push('\n');
+                    }
+                    text.push('\n');
+                }
+            }
+        }
+        "ods" => {
+            let mut workbook: Ods<_> = open_workbook(path)?;
+            for sheet_name in workbook.sheet_names() {
+                if let Ok(range) = workbook.worksheet_range(&sheet_name) {
+                    text.push_str(&format!("=== Foglio: {} ===\n", sheet_name));
+                    for row in range.rows() {
+                        let row_text: Vec<String> = row.iter()
+                            .map(|cell| format!("{}", cell))
+                            .collect();
+                        text.push_str(&row_text.join("\t"));
+                        text.push('\n');
+                    }
+                    text.push('\n');
+                }
+            }
+        }
+        _ => anyhow::bail!("Formato non supportato: {}", extension),
+    }
+    
+    if text.trim().is_empty() {
+        anyhow::bail!("Il file è vuoto");
+    }
+    
+    Ok(text)
+}
+
+fn extract_text_from_file(path: &PathBuf) -> Result<String> {
+    let extension = path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    
+    match extension.to_lowercase().as_str() {
+        "pdf" => extract_text_from_pdf(path),
+        "xlsx" | "xls" | "ods" => extract_text_from_excel(path),
+        "txt" | "md" | "csv" => {
+            let content = fs::read_to_string(path)?;
+            Ok(content)
+        }
+        _ => anyhow::bail!("Formato file non supportato: {}", extension),
+    }
+}
+
 #[derive(PartialEq)]
 enum AppState {
     Setup,
@@ -174,6 +281,8 @@ struct OllamaChatApp {
     scroll_to_bottom: bool,
     markdown_cache: CommonMarkCache,
     system_prompt_added: bool,
+    attached_files: Vec<(String, String)>, // (nome_file, contenuto)
+    file_loading_promise: Option<Promise<Result<(String, String)>>>,
 }
 
 impl Default for OllamaChatApp {
@@ -194,6 +303,8 @@ impl Default for OllamaChatApp {
             scroll_to_bottom: false,
             markdown_cache: CommonMarkCache::default(),
             system_prompt_added: false,
+            attached_files: Vec::new(),
+            file_loading_promise: None,
         }
     }
 }
@@ -229,8 +340,30 @@ impl OllamaChatApp {
         }));
     }
 
+    fn open_file_dialog(&mut self) {
+        self.file_loading_promise = Some(Promise::spawn_thread("file_picker", move || {
+            // Usa il dialog sincrono invece di async
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Documenti", &["pdf", "xlsx", "xls", "ods", "txt", "md", "csv"])
+                .pick_file()
+            {
+                let filename = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("file")
+                    .to_string();
+                
+                match extract_text_from_file(&path) {
+                    Ok(content) => Ok((filename, content)),
+                    Err(e) => Err(e),
+                }
+            } else {
+                Err(anyhow::anyhow!("Nessun file selezionato"))
+            }
+        }));
+    }
+
     fn send_message(&mut self) {
-        if self.input_text.trim().is_empty() {
+        if self.input_text.trim().is_empty() && self.attached_files.is_empty() {
             return;
         }
         
@@ -249,11 +382,13 @@ impl OllamaChatApp {
   - lim(x→∞) f(x)
 
 Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string(),
+                hidden: true,  // Non mostrare nella UI
             };
             
             let confirmation = Message {
                 role: "assistant".to_string(),
                 content: "Perfetto! Userò solo caratteri Unicode (√, ², ³, π, ±, ecc.) e notazione testuale chiara (sqrt, ^2, /) per le formule matematiche. Non userò LaTeX. Sono pronto ad aiutarti!".to_string(),
+                hidden: true,  // Non mostrare nella UI
             };
             
             self.conversation.push(instruction);
@@ -261,24 +396,55 @@ Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string(),
             self.system_prompt_added = true;
         }
 
-        let user_message = Message {
-            role: "user".to_string(),
-            content: self.input_text.trim().to_string(),
+        // Costruisci il messaggio per Ollama includendo i file allegati
+        let mut full_content = String::new();
+        
+        if !self.attached_files.is_empty() {
+            full_content.push_str("File allegati:\n\n");
+            for (filename, file_content) in &self.attached_files {
+                full_content.push_str(&format!("=== {} ===\n{}\n\n", filename, file_content));
+            }
+            full_content.push_str("---\n\n");
+        }
+        
+        full_content.push_str(self.input_text.trim());
+
+        // Messaggio che l'utente vede (solo testo, senza contenuto file)
+        let display_content = if !self.attached_files.is_empty() {
+            let files_list: Vec<String> = self.attached_files.iter()
+                .map(|(name, _)| format!("📎 {}", name))
+                .collect();
+            format!("{}\n\n{}", files_list.join("\n"), self.input_text.trim())
+        } else {
+            self.input_text.trim().to_string()
         };
 
-        self.conversation.push(user_message);
+        // Aggiungi alla conversazione per visualizzazione
+        let user_message_display = Message {
+            role: "user".to_string(),
+            content: display_content,
+            hidden: false,
+        };
+        self.conversation.push(user_message_display);
+        
         self.input_text.clear();
+        self.attached_files.clear(); // Pulisci i file allegati dopo l'invio
         self.scroll_to_bottom = true;
 
         if let (Some(client), Some(model)) = (&self.client, &self.selected_model) {
             let client_clone = client.clone();
             let model_clone = model.clone();
-            let messages = self.conversation.clone();
+            
+            // Crea una copia della conversazione con il contenuto completo per l'ultimo messaggio
+            let mut messages_for_api = self.conversation.clone();
+            if let Some(last_msg) = messages_for_api.last_mut() {
+                last_msg.content = full_content;
+            }
 
             self.chat_promise = Some(Promise::spawn_thread("chat", move || {
                 tokio::runtime::Runtime::new()
                     .unwrap()
-                    .block_on(client_clone.chat(&model_clone, &messages))
+                    .block_on(client_clone.chat(&model_clone, &messages_for_api))
             }));
         }
     }
@@ -375,6 +541,23 @@ impl eframe::App for OllamaChatApp {
             }
         }
 
+        // Controlla promise per il caricamento file
+        if let Some(promise) = &self.file_loading_promise {
+            if let Some(result) = promise.ready() {
+                match result {
+                    Ok((filename, content)) => {
+                        self.attached_files.push((filename.clone(), content.clone()));
+                    }
+                    Err(e) => {
+                        if e.to_string() != "Nessun file selezionato" {
+                            self.error_message = Some(format!("Errore caricamento file: {}", e));
+                        }
+                    }
+                }
+                self.file_loading_promise = None;
+            }
+        }
+
         // Controlla promise per la chat
         if let Some(promise) = &self.chat_promise {
             if let Some(result) = promise.ready() {
@@ -383,8 +566,10 @@ impl eframe::App for OllamaChatApp {
                         self.conversation.push(Message {
                             role: "assistant".to_string(),
                             content: response.clone(),
+                            hidden: false,
                         });
                         self.scroll_to_bottom = true;
+                        self.attached_files.clear(); // Pulisci file dopo invio
                     }
                     Err(e) => {
                         self.error_message = Some(format!("Errore: {}", e));
@@ -410,7 +595,9 @@ impl eframe::App for OllamaChatApp {
             }
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().inner_margin(egui::Margin::symmetric(16.0, 8.0)))
+            .show(ctx, |ui| {
             match self.state {
                 AppState::ScanningNetwork => {
                     ui.vertical_centered(|ui| {
@@ -610,6 +797,11 @@ impl eframe::App for OllamaChatApp {
                             }
                             
                             for message in &self.conversation {
+                                // Salta i messaggi nascosti (istruzioni di sistema)
+                                if message.hidden {
+                                    continue;
+                                }
+                                
                                 let is_user = message.role == "user";
                                 let is_dark = ui.style().visuals.dark_mode;
                                 
@@ -743,9 +935,52 @@ impl eframe::App for OllamaChatApp {
                     
                     egui::Frame::none()
                         .fill(input_bg)
-                        .inner_margin(egui::Margin::symmetric(16.0, 12.0))
+                        .inner_margin(egui::Margin::symmetric(20.0, 12.0))
                         .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width() - 8.0); // Margine interno extra
                             ui.vertical(|ui| {
+                                // Mostra file allegati
+                                if !self.attached_files.is_empty() {
+                                    let mut to_remove = None;
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 6.0; // Spaziatura tra chip
+                                        for (i, (filename, _)) in self.attached_files.iter().enumerate() {
+                                            let chip_color = if is_dark {
+                                                egui::Color32::from_rgb(48, 48, 50)
+                                            } else {
+                                                egui::Color32::from_rgb(229, 229, 234)
+                                            };
+                                            
+                                            egui::Frame::none()
+                                                .fill(chip_color)
+                                                .rounding(egui::Rounding::same(12.0))
+                                                .inner_margin(egui::Margin::symmetric(10.0, 6.0))
+                                                .show(ui, |ui| {
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(egui::RichText::new("📎").size(12.0));
+                                                        ui.label(egui::RichText::new(filename).size(12.0));
+                                                        
+                                                        let remove_btn = egui::Button::new(
+                                                            egui::RichText::new("✕").size(10.0)
+                                                        )
+                                                        .frame(false)
+                                                        .small();
+                                                        
+                                                        if ui.add(remove_btn).clicked() {
+                                                            to_remove = Some(i);
+                                                        }
+                                                    });
+                                                });
+                                        }
+                                    });
+                                    
+                                    if let Some(index) = to_remove {
+                                        self.attached_files.remove(index);
+                                    }
+                                    
+                                    ui.add_space(8.0);
+                                }
+                                
                                 ui.horizontal(|ui| {
                                     // Area di testo multilinea grande e confortevole
                                     let text_edit = egui::TextEdit::multiline(&mut self.input_text)
@@ -753,8 +988,10 @@ impl eframe::App for OllamaChatApp {
                                         .hint_text("Scrivi un messaggio...")
                                         .font(egui::TextStyle::Body);
                                     
+                                    // Calcola larghezza considerando i pulsanti (circa 100px) + margini
+                                    let buttons_width = 100.0;
                                     let response = ui.add_sized(
-                                        egui::vec2(ui.available_width() - 62.0, 80.0),
+                                        egui::vec2(ui.available_width() - buttons_width, 80.0),
                                         text_edit
                                     );
                                     
@@ -769,11 +1006,33 @@ impl eframe::App for OllamaChatApp {
 
                                     ui.add_space(8.0);
                                     
-                                    // Pulsante di invio grande e tondeggiante - allineato in basso
-                                    ui.vertical(|ui| {
-                                        ui.add_space(30.0); // Sposta il pulsante in basso
+                                    // Pulsanti orizzontali
+                                    ui.horizontal(|ui| {
+                                        // Pulsante allegato file
+                                        let attach_color = if is_dark {
+                                            egui::Color32::from_rgb(99, 99, 102)
+                                        } else {
+                                            egui::Color32::from_rgb(174, 174, 178)
+                                        };
                                         
-                                        let button_enabled = self.chat_promise.is_none() && !self.input_text.trim().is_empty();
+                                        let attach_button = egui::Button::new(
+                                            egui::RichText::new("📎").size(16.0)
+                                        )
+                                        .fill(attach_color)
+                                        .rounding(egui::Rounding::same(22.0))
+                                        .min_size(egui::vec2(44.0, 44.0));
+
+                                        if ui.add(attach_button)
+                                            .on_hover_text("Allega file (PDF, Excel, TXT)")
+                                            .clicked() {
+                                            self.open_file_dialog();
+                                        }
+                                        
+                                        ui.add_space(4.0);
+                                        
+                                        // Pulsante di invio grande e tondeggiante
+                                        let button_enabled = self.chat_promise.is_none() 
+                                            && (!self.input_text.trim().is_empty() || !self.attached_files.is_empty());
                                         let button_color = if button_enabled {
                                             egui::Color32::from_rgb(0, 122, 255)
                                         } else {
@@ -816,7 +1075,8 @@ impl eframe::App for OllamaChatApp {
         // Richiedi un nuovo frame se ci sono promise in corso
         if self.scanning_promise.is_some() 
             || self.loading_models_promise.is_some() 
-            || self.chat_promise.is_some() {
+            || self.chat_promise.is_some()
+            || self.file_loading_promise.is_some() {
             ctx.request_repaint();
         }
     }
