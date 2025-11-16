@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
 
-Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM.
+Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM, **ora con funzionalità agentiche** per il controllo del computer.
 
 ![MatePro Screenshot](.github/images/matepro-main.png)
 
@@ -53,6 +53,7 @@ Oppure dopo la compilazione:
 
 ## ✨ Funzionalità
 
+### Funzionalità Base
 - 🔍 **Scansione automatica della rete** per trovare server Ollama disponibili
 - 🎨 **Interfaccia grafica moderna** con design elegante in stile Apple
 - 🌓 **Tema chiaro/scuro** adattivo alle preferenze di sistema
@@ -65,6 +66,19 @@ Oppure dopo la compilazione:
 - ⏰ **Timestamp** su ogni messaggio
 - 📝 **Area di input spaziosa** con supporto multilinea
 - ⌨️ **Scorciatoie da tastiera** (Ctrl+Enter per inviare)
+
+### 🤖 Funzionalità Agentiche (NUOVO!)
+- 🔧 **Modalità Agente** attivabile con un click
+- 🖥️ **Controllo del computer** tramite tool specializzati
+- ⚡ **Esecuzione comandi shell** con conferme di sicurezza
+- 📁 **Manipolazione filesystem** (leggi, scrivi, naviga)
+- 📊 **Monitoraggio sistema** (CPU, RAM, processi)
+- 🔄 **Ciclo agentico autonomo** con iterazioni multiple
+- 🛡️ **Sistema di sicurezza** con conferme per operazioni pericolose
+- 📝 **Log operazioni** visibili in tempo reale nella chat
+
+**[📖 Documentazione Completa Modalità Agente](AGENT_FEATURES.md)**  
+**[🧪 Esempi e Test Prompts](AGENT_TEST_PROMPTS.md)**
 
 ## Esempio d'uso
 

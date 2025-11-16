@@ -1,6 +1,6 @@
 [package]
 name = "matepro"
-version = "0.0.1"
+version = "0.0.2-alpha"
 edition = "2021"
 authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
 description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"
@@ -25,6 +25,9 @@ pulldown-cmark = "0.11"
 rfd = "0.15"  # File dialog nativo cross-platform
 lopdf = "0.34"  # Parsing PDF
 calamine = "0.26"  # Lettura Excel (xlsx, xls, ods)
+regex = "1.10"  # Pattern matching per parsing tool calls
+walkdir = "2.4"  # Navigazione filesystem
+sysinfo = "0.30"  # Informazioni sistema e processi
 
 [package.metadata.deb]
 maintainer = "Francesco Zanti <me@francescozanti.dev>"

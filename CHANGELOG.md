@@ -1,0 +1,94 @@
+# Changelog - MatePro
+
+## [Unreleased] - Funzionalità Agentiche
+
+### 🎉 Novità Principali
+
+#### Modalità Agente
+- Aggiunta **modalità agente** attivabile dall'interfaccia utente
+- L'assistente AI può ora **prendere il controllo del computer** per eseguire operazioni
+- Sistema di **tool calling** per interazione con il sistema operativo
+
+#### Tool Disponibili
+1. **shell_execute** - Esecuzione comandi shell (con conferma)
+2. **file_read** - Lettura file dal filesystem
+3. **file_write** - Scrittura/creazione file (con conferma)
+4. **file_list** - Navigazione directory con supporto ricorsivo
+5. **process_list** - Lista processi attivi nel sistema
+6. **system_info** - Informazioni hardware e sistema
+
+#### Sicurezza
+- Sistema di **conferme esplicite** per operazioni pericolose
+- Finestra modale per **approvazione/annullamento** operazioni
+- Indicatori visivi per tool che richiedono conferma (⚠️)
+- Limite iterazioni agentiche (max 5) per evitare loop infiniti
+
+#### Interfaccia Utente
+- Toggle **"🤖 Modalità Agente"** nell'header
+- Contatore iterazioni correnti visibile
+- Messaggi di sistema (🔧) per mostrare risultati tool
+- Indicatore "Sto pensando..." durante elaborazione
+- Log operazioni formattati in Markdown nella chat
+
+#### Architettura
+- Nuovo modulo `agent.rs` con sistema completo di gestione tool
+- Parser JSON per estrarre tool calls dalle risposte LLM
+- Executor asincrono per esecuzione tool in background
+- Ciclo agentico autonomo con feedback automatico
+
+### 📦 Dipendenze Aggiunte
+- `regex` 1.10 - Pattern matching per parsing tool calls
+- `sysinfo` 0.30 - Informazioni sistema e processi
+- `walkdir` 2.4 - Navigazione filesystem ricorsiva
+
+### 📝 Documentazione
+- `AGENT_FEATURES.md` - Documentazione completa funzionalità agentiche
+- `AGENT_TEST_PROMPTS.md` - Esempi e test per modalità agente
+- README aggiornato con sezione dedicata
+
+### 🔧 Miglioramenti Tecnici
+- Gestione errori migliorata per operazioni tool
+- Thread safety con clonazione AgentSystem
+- Promise per gestione operazioni lunghe
+- UI reattiva durante esecuzione tool
+
+### 🐛 Bug Fix
+- Risolti problemi di borrowing con modali di conferma
+- Corretta compatibilità con nuova versione sysinfo
+- Rimossi import duplicati
+
+---
+
+## [0.0.1] - Release Iniziale
+
+### Funzionalità Base
+- Interfaccia grafica moderna con egui/eframe
+- Scansione automatica rete per trovare server Ollama
+- Connessione a istanze Ollama locali e remote
+- Selezione modelli con indicatore peso
+- Chat conversazionale con rendering Markdown
+- Supporto caricamento file (PDF, Excel, TXT)
+- Tema chiaro/scuro adattivo
+- Timestamp messaggi
+- Formule matematiche con Unicode
+- Scorciatoie tastiera
+
+### Piattaforme Supportate
+- Linux (testato su Ubuntu/Debian)
+- macOS (Intel e Apple Silicon)
+- Windows
+
+---
+
+## Formato Versioni
+
+Il progetto segue [Semantic Versioning](https://semver.org/):
+- **MAJOR**: Modifiche incompatibili all'API
+- **MINOR**: Nuove funzionalità backward-compatible
+- **PATCH**: Bug fix backward-compatible
+
+## Link Utili
+
+- [Repository GitHub](https://github.com/FrancescoZanti/MatePro)
+- [Issues](https://github.com/FrancescoZanti/MatePro/issues)
+- [Releases](https://github.com/FrancescoZanti/MatePro/releases)

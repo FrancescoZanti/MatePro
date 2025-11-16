@@ -9,6 +9,9 @@ use std::fs;
 use lopdf::Document;
 use calamine::{Reader, open_workbook, Xlsx, Xls, Ods};
 
+mod agent;
+use agent::{AgentSystem, ToolCall, ToolResult};
+
 // Helper per ottenere timestamp formattato
 fn get_timestamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -327,6 +330,14 @@ struct OllamaChatApp {
     system_prompt_added: bool,
     attached_files: Vec<(String, String)>, // (nome_file, contenuto)
     file_loading_promise: Option<Promise<Result<(String, String)>>>,
+    // Nuovi campi per funzionalità agentiche
+    agent_system: AgentSystem,
+    agent_mode_enabled: bool,
+    tool_execution_promise: Option<Promise<Result<Vec<ToolResult>>>>,
+    pending_tool_calls: Vec<ToolCall>,
+    awaiting_confirmation: Option<ToolCall>,
+    max_agent_iterations: usize,
+    current_agent_iteration: usize,
 }
 
 impl Default for OllamaChatApp {
@@ -349,6 +360,13 @@ impl Default for OllamaChatApp {
             system_prompt_added: false,
             attached_files: Vec::new(),
             file_loading_promise: None,
+            agent_system: AgentSystem::new(),
+            agent_mode_enabled: false,
+            tool_execution_promise: None,
+            pending_tool_calls: Vec::new(),
+            awaiting_confirmation: None,
+            max_agent_iterations: 5,
+            current_agent_iteration: 0,
         }
     }
 }
@@ -406,17 +424,90 @@ impl OllamaChatApp {
         }));
     }
 
+    fn process_next_tool_call(&mut self) {
+        if let Some(tool_call) = self.pending_tool_calls.first() {
+            // Controlla se il tool richiede conferma
+            if let Some(tool_def) = self.agent_system.tools.get(&tool_call.tool_name) {
+                if tool_def.dangerous && !self.agent_system.allow_dangerous {
+                    self.awaiting_confirmation = Some(tool_call.clone());
+                    return;
+                }
+            }
+            
+            // Esegui il tool
+            self.execute_pending_tools();
+        }
+    }
+
+    fn execute_pending_tools(&mut self) {
+        let tools_to_execute = std::mem::take(&mut self.pending_tool_calls);
+        let mut agent_system = self.agent_system.clone();
+        
+        self.tool_execution_promise = Some(Promise::spawn_thread("execute_tools", move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let mut results = Vec::new();
+            for tool_call in tools_to_execute {
+                match rt.block_on(agent_system.execute_tool(&tool_call)) {
+                    Ok(result) => results.push(result),
+                    Err(e) => {
+                        results.push(ToolResult {
+                            success: false,
+                            output: String::new(),
+                            error: Some(e.to_string()),
+                            tool_name: tool_call.tool_name.clone(),
+                        });
+                    }
+                }
+            }
+            Ok(results)
+        }));
+    }
+
+    fn continue_agent_loop(&mut self) {
+        // L'agente ha eseguito i tool, ora chiedi al LLM di continuare
+        if let (Some(client), Some(model)) = (&self.client, &self.selected_model) {
+            let client_clone = client.clone();
+            let model_clone = model.clone();
+            let messages = self.conversation.clone();
+
+            self.chat_promise = Some(Promise::spawn_thread("chat", move || {
+                tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(client_clone.chat(&model_clone, &messages))
+            }));
+        }
+    }
+
+    fn confirm_dangerous_tool(&mut self) {
+        if let Some(tool_call) = self.awaiting_confirmation.take() {
+            self.agent_system.set_allow_dangerous(true);
+            self.pending_tool_calls = vec![tool_call];
+            self.execute_pending_tools();
+        }
+    }
+
+    fn cancel_dangerous_tool(&mut self) {
+        self.awaiting_confirmation = None;
+        self.conversation.push(Message {
+            role: "system".to_string(),
+            content: "❌ Operazione annullata dall'utente".to_string(),
+            hidden: false,
+            timestamp: Some(get_timestamp()),
+        });
+    }
+
     fn send_message(&mut self) {
         if self.input_text.trim().is_empty() && self.attached_files.is_empty() {
             return;
         }
         
+        // Resetta il contatore di iterazioni per nuova richiesta utente
+        self.current_agent_iteration = 0;
+        
         // Aggiungi istruzioni di formattazione solo alla prima interazione
         if !self.system_prompt_added && self.conversation.is_empty() {
             // Usa un approccio user/assistant per garantire che il modello capisca
-            let instruction = Message {
-                role: "user".to_string(),
-                content: "IMPORTANTE: Per questa conversazione, quando devi mostrare formule matematiche NON usare LaTeX (no \\frac, \\sqrt, \\( \\), ecc). Usa SOLO:
+            let mut instruction_content = "IMPORTANTE: Per questa conversazione, quando devi mostrare formule matematiche NON usare LaTeX (no \\frac, \\sqrt, \\( \\), ecc). Usa SOLO:
 
 • Caratteri Unicode: √ ² ³ ∫ ∑ π ∞ ≤ ≥ ≠ ± × ÷
 • Notazione testuale: sqrt(), ^2, ^3, /
@@ -425,7 +516,17 @@ impl OllamaChatApp {
   - a² + b² = c²
   - lim(x→∞) f(x)
 
-Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string(),
+Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string();
+
+            // Se la modalità agente è abilitata, aggiungi descrizione tools
+            if self.agent_mode_enabled {
+                instruction_content.push_str("\n\n");
+                instruction_content.push_str(&self.agent_system.get_tools_description());
+            }
+            
+            let instruction = Message {
+                role: "user".to_string(),
+                content: instruction_content,
                 hidden: true,  // Non mostrare nella UI
                 timestamp: None,  // Messaggi di sistema senza timestamp
             };
@@ -618,6 +719,15 @@ impl eframe::App for OllamaChatApp {
                         });
                         self.scroll_to_bottom = true;
                         self.attached_files.clear(); // Pulisci file dopo invio
+                        
+                        // Se modalità agente abilitata, cerca tool calls nella risposta
+                        if self.agent_mode_enabled {
+                            let tool_calls = self.agent_system.parse_tool_calls(response);
+                            if !tool_calls.is_empty() {
+                                self.pending_tool_calls = tool_calls;
+                                self.process_next_tool_call();
+                            }
+                        }
                     }
                     Err(e) => {
                         self.error_message = Some(format!("Errore: {}", e));
@@ -625,6 +735,52 @@ impl eframe::App for OllamaChatApp {
                     }
                 }
                 self.chat_promise = None;
+            }
+        }
+
+        // Controlla promise per l'esecuzione dei tool
+        if let Some(promise) = &self.tool_execution_promise {
+            if let Some(result) = promise.ready() {
+                match result {
+                    Ok(results) => {
+                        // Aggiungi i risultati alla conversazione come messaggio nascosto per il context
+                        let mut tool_results_text = String::from("**Risultati Tool:**\n\n");
+                        for result in results {
+                            tool_results_text.push_str(&result.to_markdown());
+                            tool_results_text.push_str("\n\n");
+                            
+                            // Mostra anche un messaggio visibile all'utente
+                            self.conversation.push(Message {
+                                role: "system".to_string(),
+                                content: format!("🔧 {}", result.to_markdown()),
+                                hidden: false,
+                                timestamp: Some(get_timestamp()),
+                            });
+                        }
+                        
+                        // Aggiungi i risultati al context per il LLM
+                        self.conversation.push(Message {
+                            role: "user".to_string(),
+                            content: tool_results_text,
+                            hidden: true,
+                            timestamp: None,
+                        });
+                        
+                        self.scroll_to_bottom = true;
+                        
+                        // Incrementa iterazioni e continua il ciclo agentico se necessario
+                        self.current_agent_iteration += 1;
+                        if self.current_agent_iteration < self.max_agent_iterations {
+                            self.continue_agent_loop();
+                        } else {
+                            self.error_message = Some("Raggiunto limite massimo di iterazioni agentiche".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        self.error_message = Some(format!("Errore esecuzione tool: {}", e));
+                    }
+                }
+                self.tool_execution_promise = None;
             }
         }
 
@@ -801,6 +957,28 @@ impl eframe::App for OllamaChatApp {
                                         }
                                     });
                                 
+                                ui.add_space(12.0);
+                                
+                                // Toggle per modalità agente
+                                let agent_color = if self.agent_mode_enabled {
+                                    egui::Color32::from_rgb(52, 199, 89)
+                                } else {
+                                    egui::Color32::from_rgb(142, 142, 147)
+                                };
+                                
+                                ui.toggle_value(&mut self.agent_mode_enabled, 
+                                    egui::RichText::new("🤖 Modalità Agente")
+                                        .color(agent_color)
+                                        .size(14.0));
+                                
+                                if self.agent_mode_enabled {
+                                    ui.label(
+                                        egui::RichText::new(format!("({}/{})", self.current_agent_iteration, self.max_agent_iterations))
+                                            .size(11.0)
+                                            .color(egui::Color32::GRAY)
+                                    );
+                                }
+                                
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     let disconnect_btn = egui::Button::new(
                                         egui::RichText::new("✕").size(20.0).strong()
@@ -822,6 +1000,8 @@ impl eframe::App for OllamaChatApp {
                                         self.conversation.clear();
                                         self.error_message = None;
                                         self.system_prompt_added = false;
+                                        self.current_agent_iteration = 0;
+                                        self.agent_system = AgentSystem::new();
                                     }
                                 });
                             });
@@ -1156,11 +1336,83 @@ impl eframe::App for OllamaChatApp {
             }
         });
 
+        // Modale di conferma per tool pericolosi
+        if let Some(tool_call) = self.awaiting_confirmation.clone() {
+            let mut should_confirm = false;
+            let mut should_cancel = false;
+            
+            egui::Window::new("⚠️ Conferma Operazione")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_min_width(400.0);
+                    
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new("L'agente vuole eseguire un'operazione potenzialmente pericolosa:")
+                                .size(15.0)
+                        );
+                        ui.add_space(12.0);
+                        
+                        // Mostra dettagli del tool
+                        egui::Frame::none()
+                            .fill(egui::Color32::from_rgb(248, 248, 248))
+                            .rounding(egui::Rounding::same(8.0))
+                            .inner_margin(egui::Margin::same(12.0))
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new(format!("Tool: {}", tool_call.tool_name)).strong());
+                                ui.add_space(8.0);
+                                ui.label("Parametri:");
+                                for (key, value) in &tool_call.parameters {
+                                    ui.label(format!("  {}: {}", key, value));
+                                }
+                            });
+                        
+                        ui.add_space(16.0);
+                        
+                        ui.horizontal(|ui| {
+                            let allow_btn = egui::Button::new(
+                                egui::RichText::new("✓ Consenti").size(14.0).color(egui::Color32::WHITE)
+                            )
+                            .fill(egui::Color32::from_rgb(52, 199, 89))
+                            .min_size(egui::vec2(150.0, 36.0));
+                            
+                            if ui.add(allow_btn).on_hover_text("Esegui l'operazione").clicked() {
+                                should_confirm = true;
+                            }
+                            
+                            ui.add_space(8.0);
+                            
+                            let cancel_btn = egui::Button::new(
+                                egui::RichText::new("✕ Annulla").size(14.0)
+                            )
+                            .fill(egui::Color32::from_rgb(255, 59, 48))
+                            .min_size(egui::vec2(150.0, 36.0));
+                            
+                            if ui.add(cancel_btn).on_hover_text("Non eseguire").clicked() {
+                                should_cancel = true;
+                            }
+                        });
+                        
+                        ui.add_space(10.0);
+                    });
+                });
+            
+            if should_confirm {
+                self.confirm_dangerous_tool();
+            } else if should_cancel {
+                self.cancel_dangerous_tool();
+            }
+        }
+
         // Richiedi un nuovo frame se ci sono promise in corso
         if self.scanning_promise.is_some() 
             || self.loading_models_promise.is_some() 
             || self.chat_promise.is_some()
-            || self.file_loading_promise.is_some() {
+            || self.file_loading_promise.is_some()
+            || self.tool_execution_promise.is_some() {
             ctx.request_repaint();
         }
     }
