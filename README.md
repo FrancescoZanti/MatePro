@@ -1,6 +1,31 @@
-# MatePro
+# MatePro 🤖
 
-Applicazione Rust con interfaccia grafica per chattare con modelli LLM tramite Ollama.
+[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
+
+Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM.
+
+![MatePro Screenshot](.github/images/matepro-main.png)
+
+## 📸 Screenshots
+
+<details>
+<summary>Vedi altre immagini</summary>
+
+### Selezione Server
+![Server Selection](.github/images/server-selection.png)
+
+### Chat Interface
+![Chat Interface](.github/images/chat-interface.png)
+
+### Caricamento File
+![File Upload](.github/images/file-upload.png)
+
+### Selezione Modello
+![Model Selection](.github/images/model-selection.png)
+
+</details>
 
 ## Prerequisiti
 
@@ -26,14 +51,18 @@ Oppure dopo la compilazione:
 ./target/release/matepro
 ```
 
-## Funzionalità
+## ✨ Funzionalità
 
 - 🔍 **Scansione automatica della rete** per trovare server Ollama disponibili
 - 🎨 **Interfaccia grafica moderna** con design elegante in stile Apple
 - 🌓 **Tema chiaro/scuro** adattivo alle preferenze di sistema
 - 💬 **Chat conversazionale** con bolle messaggi stile iMessage
 - 🔌 **Connessione a istanze Ollama** locali o remote
-- 🤖 **Selezione interattiva** del modello tra quelli disponibili
+- 🤖 **Selezione interattiva** del modello con indicatore peso (🟢🟡🔴)
+- 📎 **Caricamento file** (PDF, Excel, TXT) per analisi e traduzioni
+- 📝 **Rendering Markdown** con syntax highlighting per codice
+- 🔢 **Formule matematiche** con notazione Unicode
+- ⏰ **Timestamp** su ogni messaggio
 - 📝 **Area di input spaziosa** con supporto multilinea
 - ⌨️ **Scorciatoie da tastiera** (Ctrl+Enter per inviare)
 
