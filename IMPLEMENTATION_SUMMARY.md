@@ -10,21 +10,31 @@ L'applicazione **MatePro** è stata arricchita con funzionalità agentiche compl
 - `regex` 1.10 - Parsing tool calls dalle risposte LLM
 - `sysinfo` 0.30 - Monitoraggio sistema e processi
 - `walkdir` 2.4 - Navigazione filesystem ricorsiva
+- `webbrowser` 1.0 - Apertura browser cross-platform
+- `url` 2.5 - Parsing e validazione URL
+- `urlencoding` 2.1 - Encoding parametri query
 
-### 2. Nuovo Modulo Agent (src/agent.rs) - 490+ righe
+### 2. Nuovo Modulo Agent (src/agent.rs) - 650+ righe
 **Strutture principali:**
 - `ToolDefinition` - Definizione tool con parametri
 - `ToolCall` - Chiamata tool estratta da risposta LLM
 - `ToolResult` - Risultato esecuzione con formattazione
 - `AgentSystem` - Sistema centrale gestione tool
 
-**Tool implementati:**
+**Tool Sistema (6):**
 1. `shell_execute` - Esecuzione comandi bash (pericoloso)
 2. `file_read` - Lettura file
 3. `file_write` - Scrittura file (pericoloso)
 4. `file_list` - Lista directory (ricorsiva opzionale)
 5. `process_list` - Lista processi attivi
 6. `system_info` - Info sistema (CPU, RAM, kernel)
+
+**Tool Web e Browser (5) 🆕:**
+7. `browser_open` - Apertura URL con validazione schema
+8. `web_search` - Ricerca Google parametrizzata
+9. `map_open` - Google Maps con località/direzioni
+10. `youtube_search` - Ricerca YouTube
+11. `document_view` - Apertura file locali
 
 **Funzionalità:**
 - Parser JSON per estrarre tool calls da markdown
@@ -77,12 +87,31 @@ L'applicazione **MatePro** è stata arricchita con funzionalità agentiche compl
 - Modelli LLM consigliati
 - Note sicurezza per testing
 
+**AGENT_WEB_TOOLS.md** (400+ righe) 🆕
+- Guida completa tool web/browser
+- 5 tool dettagliati con esempi
+- Riconoscimento azioni complesse
+- Pattern per query web-based
+- Multi-step tasks con web
+- Best practices e troubleshooting
+- Integrazione con tool sistema
+
+**AGENT_WEB_TEST_PROMPTS.md** (350+ righe) 🆕
+- 35 test prompts per tool web
+- Test basici, intermedi, avanzati
+- Comprensione linguaggio naturale
+- Edge cases e sicurezza
+- Casi d'uso reali
+- Metriche successo
+- Troubleshooting
+
 **CHANGELOG.md**
 - Documentazione completa modifiche
 - Semantic versioning
 
 **README.md aggiornato**
 - Sezione "Funzionalità Agentiche (NUOVO!)"
+- Sottosezione Tool Web e Browser
 - Link documentazione
 - Badge e descrizione aggiornata
 
@@ -156,27 +185,54 @@ L'applicazione **MatePro** è stata arricchita con funzionalità agentiche compl
 La compilazione è completata con successo:
 ```
 ✅ cargo build --release
-   Finished `release` profile [optimized] target(s) in 4.39s
+   Finished `release` profile [optimized] target(s) in 4.62s
 ```
 
-Warning minori (unused enum/method) non impattano funzionalità.
+Nessun warning - compilazione pulita.
 
 ## Statistiche
 
-- **Linee codice aggiunte:** ~800+
-- **Nuovi file:** 4 (agent.rs + 3 documentazione)
-- **Tool implementati:** 6
-- **Test prompts documentati:** 21
-- **Dipendenze aggiunte:** 3
+- **Linee codice aggiunte:** ~1000+
+- **Nuovi file:** 6 (agent.rs + 5 documentazione)
+- **Tool implementati:** 11 (6 sistema + 5 web)
+- **Test prompts documentati:** 56 (21 + 35 web)
+- **Dipendenze aggiunte:** 6
+- **Righe documentazione:** 1400+
+
+## Funzionalità Web Aggiunte 🆕
+
+### Capacità di Riconoscimento Azioni
+L'agente ora comprende quando l'utente richiede azioni che necessitano visualizzazione web:
+
+- **Meteo/Notizie:** Apre ricerca web automaticamente
+- **Mappe/Indicazioni:** Usa Google Maps per località
+- **Video/Tutorial:** Cerca su YouTube
+- **Documenti:** Apre file con programma predefinito
+- **URL diretti:** Valida e apre nel browser
+
+### Enhanced Prompt System
+Prompt agente migliorato con 7 linee guida per riconoscimento pattern:
+- Informazioni in tempo reale → `web_search`
+- Località/direzioni → `map_open`
+- Tutorial/video → `youtube_search`
+- Documenti locali → `document_view`
+- URL diretti → `browser_open`
+
+### Validazione e Sicurezza
+- URL parsing con schema HTTP/HTTPS
+- Encoding sicuro query parametri
+- Nessuna conferma richiesta (tool non pericolosi)
+- Cross-platform (Linux, Windows, macOS)
 
 ## Prossimi Passi Consigliati
 
 1. **Testing manuale** con vari modelli Ollama
 2. **Raccogliere feedback** utenti sulla UX
-3. **Aggiungere tool** per casi d'uso specifici
-4. **Implementare sandbox** per test sicuri
-5. **Telemetria** uso tool (opzionale, privacy-friendly)
-6. **Tool customizzabili** da config file
+3. **Web scraping tool** per estrarre contenuti
+4. **Screenshot tool** per catturare pagine
+5. **Download manager** per file da web
+6. **Telemetria** uso tool (opzionale, privacy-friendly)
+7. **Tool customizzabili** da config file
 
 ## Note Importanti
 

@@ -175,6 +175,108 @@ impl AgentSystem {
             },
         );
 
+        // Tool: BrowserOpen
+        tools.insert(
+            "browser_open".to_string(),
+            ToolDefinition {
+                name: "browser_open".to_string(),
+                description: "Apre un URL nel browser predefinito. USALO quando l'utente chiede di visualizzare informazioni web, mappe, grafici, documenti online, video, etc.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "url".to_string(),
+                        param_type: "string".to_string(),
+                        description: "URL completo da aprire (deve iniziare con http:// o https://)".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "description".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Breve descrizione di cosa si sta aprendo".to_string(),
+                        required: false,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        // Tool: WebSearch
+        tools.insert(
+            "web_search".to_string(),
+            ToolDefinition {
+                name: "web_search".to_string(),
+                description: "Esegue una ricerca su Google aprendo il browser. USALO quando l'utente chiede informazioni che richiedono ricerca web.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "query".to_string(),
+                        param_type: "string".to_string(),
+                        description: "La query di ricerca".to_string(),
+                        required: true,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        // Tool: MapOpen
+        tools.insert(
+            "map_open".to_string(),
+            ToolDefinition {
+                name: "map_open".to_string(),
+                description: "Apre Google Maps con una località o percorso. USALO per visualizzare mappe, indicazioni, luoghi.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "location".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Nome della località, indirizzo o coordinate".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "mode".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Modalità: 'search' (default), 'directions' per percorsi".to_string(),
+                        required: false,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        // Tool: YouTubeSearch
+        tools.insert(
+            "youtube_search".to_string(),
+            ToolDefinition {
+                name: "youtube_search".to_string(),
+                description: "Cerca video su YouTube aprendo il browser. USALO quando l'utente chiede di vedere video o tutorial.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "query".to_string(),
+                        param_type: "string".to_string(),
+                        description: "La query di ricerca su YouTube".to_string(),
+                        required: true,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        // Tool: DocumentView
+        tools.insert(
+            "document_view".to_string(),
+            ToolDefinition {
+                name: "document_view".to_string(),
+                description: "Apre un documento/file locale nel programma predefinito. USALO per visualizzare PDF, immagini, documenti.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "path".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Percorso completo del file da aprire".to_string(),
+                        required: true,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
         Self {
             tools,
             execution_log: Vec::new(),
@@ -276,6 +378,11 @@ impl AgentSystem {
             "file_list" => self.execute_file_list(&call.parameters).await,
             "process_list" => self.execute_process_list().await,
             "system_info" => self.execute_system_info().await,
+            "browser_open" => self.execute_browser_open(&call.parameters).await,
+            "web_search" => self.execute_web_search(&call.parameters).await,
+            "map_open" => self.execute_map_open(&call.parameters).await,
+            "youtube_search" => self.execute_youtube_search(&call.parameters).await,
+            "document_view" => self.execute_document_view(&call.parameters).await,
             _ => Err(anyhow::anyhow!("Tool non implementato: {}", call.tool_name)),
         };
 
@@ -444,6 +551,105 @@ impl AgentSystem {
         );
 
         Ok(info)
+    }
+
+    async fn execute_browser_open(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let url_str = params
+            .get("url")
+            .and_then(|v| v.as_str())
+            .context("Parametro 'url' mancante")?;
+
+        let description = params
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("pagina web");
+
+        // Valida URL
+        let parsed_url = url::Url::parse(url_str)
+            .context("URL non valido")?;
+
+        if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
+            anyhow::bail!("Solo URL http:// o https:// sono supportati");
+        }
+
+        // Apri nel browser
+        webbrowser::open(url_str)
+            .context("Impossibile aprire il browser")?;
+
+        Ok(format!("Browser aperto con {} - {}", description, url_str))
+    }
+
+    async fn execute_web_search(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let query = params
+            .get("query")
+            .and_then(|v| v.as_str())
+            .context("Parametro 'query' mancante")?;
+
+        // Crea URL di ricerca Google
+        let encoded_query = urlencoding::encode(query);
+        let search_url = format!("https://www.google.com/search?q={}", encoded_query);
+
+        webbrowser::open(&search_url)
+            .context("Impossibile aprire il browser")?;
+
+        Ok(format!("Ricerca Google avviata per: '{}'", query))
+    }
+
+    async fn execute_map_open(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let location = params
+            .get("location")
+            .and_then(|v| v.as_str())
+            .context("Parametro 'location' mancante")?;
+
+        let mode = params
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("search");
+
+        let encoded_location = urlencoding::encode(location);
+        
+        let map_url = match mode {
+            "directions" => format!("https://www.google.com/maps/dir/?api=1&destination={}", encoded_location),
+            _ => format!("https://www.google.com/maps/search/?api=1&query={}", encoded_location),
+        };
+
+        webbrowser::open(&map_url)
+            .context("Impossibile aprire Google Maps")?;
+
+        Ok(format!("Google Maps aperto per: '{}' (modalità: {})", location, mode))
+    }
+
+    async fn execute_youtube_search(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let query = params
+            .get("query")
+            .and_then(|v| v.as_str())
+            .context("Parametro 'query' mancante")?;
+
+        let encoded_query = urlencoding::encode(query);
+        let youtube_url = format!("https://www.youtube.com/results?search_query={}", encoded_query);
+
+        webbrowser::open(&youtube_url)
+            .context("Impossibile aprire YouTube")?;
+
+        Ok(format!("YouTube aperto con ricerca: '{}'", query))
+    }
+
+    async fn execute_document_view(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .context("Parametro 'path' mancante")?;
+
+        // Verifica che il file esista
+        if !std::path::Path::new(path).exists() {
+            anyhow::bail!("File non trovato: {}", path);
+        }
+
+        // Apri con il programma predefinito del sistema
+        webbrowser::open(path)
+            .context("Impossibile aprire il file")?;
+
+        Ok(format!("File aperto: {}", path))
     }
 }
 

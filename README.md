@@ -68,16 +68,30 @@ Oppure dopo la compilazione:
 - ⌨️ **Scorciatoie da tastiera** (Ctrl+Enter per inviare)
 
 ### 🤖 Funzionalità Agentiche (NUOVO!)
+
+#### Tool Sistema
 - 🔧 **Modalità Agente** attivabile con un click
 - 🖥️ **Controllo del computer** tramite tool specializzati
 - ⚡ **Esecuzione comandi shell** con conferme di sicurezza
 - 📁 **Manipolazione filesystem** (leggi, scrivi, naviga)
 - 📊 **Monitoraggio sistema** (CPU, RAM, processi)
-- 🔄 **Ciclo agentico autonomo** con iterazioni multiple
+
+#### Tool Web e Browser (NOVITÀ!) 🌐
+- 🌐 **Apertura browser** con URL specifici
+- 🔍 **Ricerca web Google** automatica
+- 🗺️ **Google Maps** per luoghi e indicazioni
+- 🎥 **YouTube** ricerca video e tutorial
+- � **Visualizzazione documenti** locali
+
+#### Funzionalità Avanzate
+- �🔄 **Ciclo agentico autonomo** con iterazioni multiple
+- 🧠 **Riconoscimento azioni complesse** (es. "mostrami il meteo")
 - 🛡️ **Sistema di sicurezza** con conferme per operazioni pericolose
 - 📝 **Log operazioni** visibili in tempo reale nella chat
+- 🎯 **Task multi-step** automatici
 
 **[📖 Documentazione Completa Modalità Agente](AGENT_FEATURES.md)**  
+**[🌐 Guida Tool Web e Browser](AGENT_WEB_TOOLS.md)**  
 **[🧪 Esempi e Test Prompts](AGENT_TEST_PROMPTS.md)**
 
 ## Esempio d'uso

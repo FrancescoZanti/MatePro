@@ -8,14 +8,22 @@
 - Aggiunta **modalità agente** attivabile dall'interfaccia utente
 - L'assistente AI può ora **prendere il controllo del computer** per eseguire operazioni
 - Sistema di **tool calling** per interazione con il sistema operativo
+- **Nuovo:** Comprensione azioni complesse che richiedono visualizzazione web
 
-#### Tool Disponibili
+#### Tool Sistema (6)
 1. **shell_execute** - Esecuzione comandi shell (con conferma)
 2. **file_read** - Lettura file dal filesystem
 3. **file_write** - Scrittura/creazione file (con conferma)
 4. **file_list** - Navigazione directory con supporto ricorsivo
 5. **process_list** - Lista processi attivi nel sistema
 6. **system_info** - Informazioni hardware e sistema
+
+#### Tool Web e Browser (5) 🆕
+7. **browser_open** - Apre URL nel browser predefinito
+8. **web_search** - Ricerca Google con query parametrizzata
+9. **map_open** - Apre Google Maps per località o indicazioni
+10. **youtube_search** - Cerca video su YouTube
+11. **document_view** - Apre file locali con programma predefinito
 
 #### Sicurezza
 - Sistema di **conferme esplicite** per operazioni pericolose
@@ -40,16 +48,25 @@
 - `regex` 1.10 - Pattern matching per parsing tool calls
 - `sysinfo` 0.30 - Informazioni sistema e processi
 - `walkdir` 2.4 - Navigazione filesystem ricorsiva
+- **Nuovo:** `webbrowser` 1.0 - Apertura browser cross-platform
+- **Nuovo:** `url` 2.5 - Parsing e validazione URL
+- **Nuovo:** `urlencoding` 2.1 - Encoding parametri query
 
 ### 📝 Documentazione
 - `AGENT_FEATURES.md` - Documentazione completa funzionalità agentiche
-- `AGENT_TEST_PROMPTS.md` - Esempi e test per modalità agente
+- `AGENT_TEST_PROMPTS.md` - Esempi e test per modalità agente (21 scenari)
+- **Nuovo:** `AGENT_WEB_TOOLS.md` - Guida completa tool web (400+ righe)
+- **Nuovo:** `AGENT_WEB_TEST_PROMPTS.md` - 35 test prompts per tool web
 - README aggiornato con sezione dedicata
 
 ### 🔧 Miglioramenti Tecnici
 - Gestione errori migliorata per operazioni tool
 - Thread safety con clonazione AgentSystem
 - Promise per gestione operazioni lunghe
+- **Nuovo:** Prompt system enhancement con riconoscimento azioni complesse
+- **Nuovo:** Validazione URL con schema HTTP/HTTPS
+- **Nuovo:** Encoding sicuro query parametri
+- **Nuovo:** Supporto apertura file locali con programma predefinito
 - UI reattiva durante esecuzione tool
 
 ### 🐛 Bug Fix

@@ -518,10 +518,25 @@ impl OllamaChatApp {
 
 Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string();
 
-            // Se la modalità agente è abilitata, aggiungi descrizione tools
+            // Se la modalità agente è abilitata, aggiungi descrizione tools e linee guida
             if self.agent_mode_enabled {
                 instruction_content.push_str("\n\n");
                 instruction_content.push_str(&self.agent_system.get_tools_description());
+                instruction_content.push_str("\n**LINEE GUIDA PER AZIONI COMPLESSE:**\n\n");
+                instruction_content.push_str("1. **Visualizzazioni Web**: Se l'utente chiede di vedere/visualizzare qualcosa online, usa `browser_open`, `web_search`, `map_open` o `youtube_search`\n");
+                instruction_content.push_str("2. **Informazioni in Tempo Reale**: Per meteo, notizie, risultati sportivi, usa `web_search` per aprire risultati aggiornati\n");
+                instruction_content.push_str("3. **Mappe e Luoghi**: Per indirizzi, ristoranti, percorsi stradali, usa `map_open`\n");
+                instruction_content.push_str("4. **Video e Tutorial**: Per guide, musica, film, usa `youtube_search`\n");
+                instruction_content.push_str("5. **Documenti Locali**: Per PDF, immagini, file esistenti, usa `document_view`\n");
+                instruction_content.push_str("6. **Task Multi-Step**: Combina più tool in sequenza per completare task complessi\n");
+                instruction_content.push_str("7. **Spiega Prima**: Prima di usare tool, spiega brevemente cosa farai\n\n");
+                instruction_content.push_str("**ESEMPI DI RICONOSCIMENTO AZIONI COMPLESSE:**\n");
+                instruction_content.push_str("- \"mostrami il meteo\" → web_search per meteo in tempo reale\n");
+                instruction_content.push_str("- \"apri Google Maps con Milano\" → map_open\n");
+                instruction_content.push_str("- \"cerca video tutorial Python\" → youtube_search\n");
+                instruction_content.push_str("- \"vai su Wikipedia\" → browser_open con URL Wikipedia\n");
+                instruction_content.push_str("- \"come arrivo a Roma da Milano\" → map_open con mode=directions\n");
+                instruction_content.push_str("- \"mostrami il sito di GitHub\" → browser_open\n");
             }
             
             let instruction = Message {

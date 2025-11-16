@@ -1,6 +1,6 @@
 [package]
 name = "matepro"
-version = "0.0.2-alpha"
+version = "0.0.2-beta"
 edition = "2021"
 authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
 description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"
@@ -28,6 +28,9 @@ calamine = "0.26"  # Lettura Excel (xlsx, xls, ods)
 regex = "1.10"  # Pattern matching per parsing tool calls
 walkdir = "2.4"  # Navigazione filesystem
 sysinfo = "0.30"  # Informazioni sistema e processi
+webbrowser = "1.0"  # Apertura browser
+url = "2.5"  # Parsing e validazione URL
+urlencoding = "2.1"  # Encoding URL per query
 
 [package.metadata.deb]
 maintainer = "Francesco Zanti <me@francescozanti.dev>"
