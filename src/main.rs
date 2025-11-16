@@ -9,6 +9,21 @@ use std::fs;
 use lopdf::Document;
 use calamine::{Reader, open_workbook, Xlsx, Xls, Ods};
 
+// Helper per ottenere timestamp formattato
+fn get_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    
+    // Calcola ore e minuti dal timestamp Unix (considera fuso orario UTC+1 per Italia)
+    let total_seconds = now + 3600; // +1 ora per CET/CEST
+    let hours = (total_seconds / 3600) % 24;
+    let minutes = (total_seconds % 3600) / 60;
+    format!("{:02}:{:02}", hours, minutes)
+}
+
 #[derive(Debug, Serialize)]
 struct ChatRequest {
     model: String,
@@ -22,11 +37,36 @@ struct Message {
     content: String,
     #[serde(skip)]
     hidden: bool,  // Se true, non mostrare nella chat UI
+    #[serde(skip)]
+    timestamp: Option<String>,  // Orario del messaggio
 }
 
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
     message: Message,
+}
+
+#[derive(Debug, Clone)]
+struct ModelInfo {
+    name: String,
+    size: u64,  // Size in bytes
+}
+
+impl ModelInfo {
+    fn size_gb(&self) -> f64 {
+        self.size as f64 / 1_073_741_824.0  // Convert bytes to GB
+    }
+    
+    fn weight_category(&self) -> (&str, egui::Color32) {
+        let gb = self.size_gb();
+        if gb < 4.0 {
+            ("🟢", egui::Color32::from_rgb(52, 199, 89))  // Verde - leggero
+        } else if gb < 8.0 {
+            ("🟡", egui::Color32::from_rgb(255, 204, 0))  // Giallo - medio
+        } else {
+            ("🔴", egui::Color32::from_rgb(255, 59, 48))  // Rosso - pesante
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -43,7 +83,7 @@ impl OllamaClient {
         }
     }
 
-    async fn list_models(&self) -> Result<Vec<String>> {
+    async fn list_models(&self) -> Result<Vec<ModelInfo>> {
         let url = format!("{}/api/tags", self.base_url);
         let response = self
             .client
@@ -61,7 +101,11 @@ impl OllamaClient {
             .as_array()
             .context("Formato risposta non valido")?
             .iter()
-            .filter_map(|m| m["name"].as_str().map(String::from))
+            .filter_map(|m| {
+                let name = m["name"].as_str()?.to_string();
+                let size = m["size"].as_u64().unwrap_or(0);
+                Some(ModelInfo { name, size })
+            })
             .collect();
 
         Ok(models)
@@ -269,14 +313,14 @@ struct OllamaChatApp {
     state: AppState,
     ollama_url: String,
     discovered_servers: Vec<String>,
-    available_models: Vec<String>,
+    available_models: Vec<ModelInfo>,
     selected_model: Option<String>,
     conversation: Vec<Message>,
     input_text: String,
     error_message: Option<String>,
     client: Option<OllamaClient>,
     scanning_promise: Option<Promise<Vec<String>>>,
-    loading_models_promise: Option<Promise<Result<Vec<String>>>>,
+    loading_models_promise: Option<Promise<Result<Vec<ModelInfo>>>>,
     chat_promise: Option<Promise<Result<String>>>,
     scroll_to_bottom: bool,
     markdown_cache: CommonMarkCache,
@@ -383,12 +427,14 @@ impl OllamaChatApp {
 
 Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string(),
                 hidden: true,  // Non mostrare nella UI
+                timestamp: None,  // Messaggi di sistema senza timestamp
             };
             
             let confirmation = Message {
                 role: "assistant".to_string(),
                 content: "Perfetto! Userò solo caratteri Unicode (√, ², ³, π, ±, ecc.) e notazione testuale chiara (sqrt, ^2, /) per le formule matematiche. Non userò LaTeX. Sono pronto ad aiutarti!".to_string(),
                 hidden: true,  // Non mostrare nella UI
+                timestamp: None,  // Messaggi di sistema senza timestamp
             };
             
             self.conversation.push(instruction);
@@ -424,6 +470,7 @@ Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string(),
             role: "user".to_string(),
             content: display_content,
             hidden: false,
+            timestamp: Some(get_timestamp()),
         };
         self.conversation.push(user_message_display);
         
@@ -528,7 +575,7 @@ impl eframe::App for OllamaChatApp {
                             self.state = AppState::Setup;
                         } else {
                             self.available_models = models.clone();
-                            self.selected_model = Some(models[0].clone());
+                            self.selected_model = Some(models[0].name.clone());
                             self.state = AppState::Chat;
                         }
                     }
@@ -567,6 +614,7 @@ impl eframe::App for OllamaChatApp {
                             role: "assistant".to_string(),
                             content: response.clone(),
                             hidden: false,
+                            timestamp: Some(get_timestamp()),
                         });
                         self.scroll_to_bottom = true;
                         self.attached_files.clear(); // Pulisci file dopo invio
@@ -730,14 +778,26 @@ impl eframe::App for OllamaChatApp {
                                 
                                 egui::ComboBox::new("model_selector", "")
                                     .selected_text(egui::RichText::new(self.selected_model.as_ref().unwrap()).size(16.0))
-                                    .width(200.0)
+                                    .width(280.0)
                                     .show_ui(ui, |ui| {
                                         for model in &self.available_models {
-                                            ui.selectable_value(
-                                                &mut self.selected_model,
-                                                Some(model.clone()),
-                                                model,
-                                            );
+                                            let (indicator, color) = model.weight_category();
+                                            let size_text = format!("{:.1} GB", model.size_gb());
+                                            
+                                            ui.horizontal(|ui| {
+                                                let response = ui.selectable_value(
+                                                    &mut self.selected_model,
+                                                    Some(model.name.clone()),
+                                                    &model.name,
+                                                );
+                                                
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    ui.label(egui::RichText::new(size_text).size(11.0).color(egui::Color32::GRAY));
+                                                    ui.label(egui::RichText::new(indicator).color(color));
+                                                });
+                                                
+                                                response
+                                            });
                                         }
                                     });
                                 
@@ -838,11 +898,24 @@ impl eframe::App for OllamaChatApp {
                                             
                                             if is_user {
                                                 // Messaggi utente semplici senza markdown
-                                                ui.label(
-                                                    egui::RichText::new(&message.content)
-                                                        .color(text_color)
-                                                        .size(14.5)
-                                                );
+                                                ui.vertical(|ui| {
+                                                    ui.label(
+                                                        egui::RichText::new(&message.content)
+                                                            .color(text_color)
+                                                            .size(14.5)
+                                                    );
+                                                    
+                                                    // Timestamp in basso a destra
+                                                    if let Some(timestamp) = &message.timestamp {
+                                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                                            ui.label(
+                                                                egui::RichText::new(timestamp)
+                                                                    .color(egui::Color32::from_rgba_premultiplied(255, 255, 255, 180))
+                                                                    .size(10.0)
+                                                            );
+                                                        });
+                                                    }
+                                                });
                                             } else {
                                                 // Messaggi assistente con rendering Markdown migliorato
                                                 {
@@ -868,11 +941,22 @@ impl eframe::App for OllamaChatApp {
                                                 }
                                                 
                                                 // Rendering markdown con sintassi codice e formule (Unicode)
-                                                CommonMarkViewer::new().show(
-                                                    ui,
-                                                    &mut self.markdown_cache,
-                                                    &message.content,
-                                                );
+                                                ui.vertical(|ui| {
+                                                    CommonMarkViewer::new().show(
+                                                        ui,
+                                                        &mut self.markdown_cache,
+                                                        &message.content,
+                                                    );
+                                                    
+                                                    // Timestamp in basso a sinistra per l'assistente
+                                                    if let Some(timestamp) = &message.timestamp {
+                                                        ui.label(
+                                                            egui::RichText::new(timestamp)
+                                                                .color(egui::Color32::from_rgb(142, 142, 147))
+                                                                .size(10.0)
+                                                        );
+                                                    }
+                                                });
                                             }
                                         });
                                 });
