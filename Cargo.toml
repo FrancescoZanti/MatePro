@@ -1,0 +1,49 @@
+[package]
+name = "matepro"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"
+license = "MIT"
+repository = "https://github.com/yourusername/matepro"
+homepage = "https://github.com/yourusername/matepro"
+keywords = ["ollama", "llm", "chat", "ai", "gui"]
+categories = ["command-line-utilities", "gui"]
+
+[dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+eframe = "0.29"
+egui = "0.29"
+poll-promise = "0.3"
+local-ip-address = "0.6"
+egui_commonmark = { version = "0.18", features = ["better_syntax_highlighting"] }
+pulldown-cmark = "0.11"
+
+[package.metadata.deb]
+maintainer = "Your Name <your.email@example.com>"
+copyright = "2025, Your Name <your.email@example.com>"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+MatePro è un client moderno per Ollama con interfaccia grafica elegante.
+Caratteristiche principali:
+- Scansione automatica della rete per trovare server Ollama
+- Interfaccia grafica in stile Apple con tema chiaro/scuro
+- Supporto completo per Markdown e formattazione codice
+- Chat conversazionale con mantenimento del contesto"""
+depends = "$auto, libgtk-3-0, libxcb-render0, libxcb-shape0, libxcb-xfixes0"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/matepro", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/matepro/README", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/matepro", dest = "/usr/bin/matepro", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/matepro/README", mode = "644" },
+]
