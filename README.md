@@ -95,11 +95,153 @@ Per creare una nuova release:
 4. Pusha il tag: `git push origin v0.1.0`
 
 GitHub Actions creerà automaticamente:
+
 - 📦 Binario Windows (ZIP)
 - 🍎 DMG universale per macOS (Intel + Apple Silicon)
 - 🐧 Binario Linux (tar.gz)
 - 📦 Pacchetto DEB per Debian/Ubuntu
 - 📦 Pacchetto RPM per Fedora/RHEL/CentOS
+
+## 🤝 Come Contribuire
+
+Contributi, bug report e richieste di nuove funzionalità sono benvenuti! Segui questi passaggi per contribuire in modo sicuro:
+
+### 1️⃣ Fork e Clone
+
+```bash
+# Fai il fork del repository su GitHub, poi:
+git clone https://github.com/TUO_USERNAME/MatePro.git
+cd MatePro
+git remote add upstream https://github.com/FrancescoZanti/MatePro.git
+```
+
+### 2️⃣ Crea un Branch
+
+Usa nomi descrittivi per i branch:
+
+```bash
+# Per nuove funzionalità
+git checkout -b feature/nome-funzionalita
+
+# Per fix di bug
+git checkout -b fix/descrizione-bug
+
+# Per miglioramenti documentazione
+git checkout -b docs/descrizione-modifica
+```
+
+### 3️⃣ Sviluppa e Testa
+
+```bash
+# Installa le dipendenze
+cargo build
+
+# Esegui i test (se presenti)
+cargo test
+
+# Verifica il codice
+cargo clippy -- -D warnings
+
+# Formatta il codice
+cargo fmt
+```
+
+### 4️⃣ Commit con Conventional Commits
+
+Usa messaggi di commit chiari e descrittivi seguendo [Conventional Commits](https://www.conventionalcommits.org/):
+
+```bash
+# Esempi di commit validi
+git commit -m "feat: aggiungi supporto per file JSON"
+git commit -m "fix: risolvi crash su caricamento PDF corrotti"
+git commit -m "docs: aggiorna README con nuove istruzioni"
+git commit -m "style: migliora spaziatura nell'interfaccia chat"
+git commit -m "refactor: ottimizza parsing dei modelli"
+git commit -m "perf: migliora velocità di scansione rete"
+```
+
+**Prefissi comuni:**
+- `feat:` Nuova funzionalità
+- `fix:` Correzione bug
+- `docs:` Documentazione
+- `style:` Formattazione, UI/UX
+- `refactor:` Refactoring codice
+- `perf:` Miglioramenti performance
+- `test:` Aggiunta/modifica test
+- `chore:` Manutenzione, dipendenze
+
+### 5️⃣ Push e Pull Request
+
+```bash
+# Sincronizza con upstream prima di pushare
+git fetch upstream
+git rebase upstream/master
+
+# Pusha sul tuo fork
+git push origin nome-del-tuo-branch
+```
+
+Poi su GitHub:
+1. Vai al tuo fork e clicca **"New Pull Request"**
+2. Compila il template della PR con:
+   - **Descrizione** chiara delle modifiche
+   - **Motivazione** del cambiamento
+   - **Screenshot** (se modifiche UI)
+   - **Breaking changes** (se presenti)
+3. Assicurati che tutti i check CI passino ✅
+
+### 🔒 Best Practices di Sicurezza
+
+- ✅ **NON** committare mai credenziali, token o API keys
+- ✅ **NON** includere dati personali o sensibili
+- ✅ Testa sempre le modifiche localmente prima di pushare
+- ✅ Mantieni i commit piccoli e focalizzati
+- ✅ Documenta le modifiche complesse
+- ✅ Rispetta il codice esistente e le convenzioni del progetto
+- ✅ Segnala vulnerabilità di sicurezza privatamente (vedi sotto)
+
+### 🔐 Segnalare Vulnerabilità di Sicurezza
+
+**NON** aprire issue pubbliche per vulnerabilità di sicurezza.
+
+Invece:
+1. Invia una mail a: **[me@francescozanti.dev](mailto:me@francescozanti.dev)**
+2. Includi:
+   - Descrizione dettagliata della vulnerabilità
+   - Passi per riprodurla
+   - Possibile impatto
+   - Suggerimenti per la risoluzione (se disponibili)
+3. Attendi una risposta entro 48 ore
+
+### 📋 Checklist Prima della PR
+
+- [ ] Il codice compila senza errori (`cargo build`)
+- [ ] Tutti i test passano (`cargo test`)
+- [ ] Il codice è formattato (`cargo fmt`)
+- [ ] Nessun warning da clippy (`cargo clippy`)
+- [ ] Documentazione aggiornata se necessario
+- [ ] Commit seguono Conventional Commits
+- [ ] Branch è sincronizzato con `upstream/master`
+- [ ] Screenshot aggiunti per modifiche UI
+
+### 💡 Idee per Contribuire
+
+Non sai da dove iniziare? Ecco alcune idee:
+
+- 📝 Migliorare la documentazione
+- 🌍 Aggiungere traduzioni (i18n)
+- 🐛 Risolvere issue aperti
+- ✨ Implementare funzionalità richieste
+- 🎨 Migliorare UI/UX
+- ⚡ Ottimizzare performance
+- 🧪 Aggiungere test
+- 📦 Supportare nuovi formati file
+
+### ❓ Domande?
+
+Hai domande sul progetto o su come contribuire?
+- Apri una **Discussion** su GitHub
+- Contatta via email: **me@francescozanti.dev**
 
 ## Licenza
 
