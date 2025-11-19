@@ -32,7 +32,7 @@ webbrowser = "1.0"  # Apertura browser
 url = "2.5"  # Parsing e validazione URL
 urlencoding = "2.1"  # Encoding URL per query
 # MCP SQL Server support
-tiberius = { version = "0.12", features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal"] }  # SQL Server driver nativo
+tiberius = { version = "0.12", features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "winauth"] }  # SQL Server driver nativo
 tokio-util = { version = "0.7", features = ["compat"] }  # Compatibility layer per async I/O
 uuid = { version = "1.0", features = ["v4"] }  # UUID per connection IDs
 lazy_static = "1.4"  # Static globals thread-safe

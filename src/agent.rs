@@ -12,7 +12,7 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: Vec<ToolParameter>,
-    pub dangerous: bool,  // Se richiede conferma
+    pub dangerous: bool, // Se richiede conferma
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +28,7 @@ pub struct ToolParameter {
 pub struct ToolCall {
     pub tool_name: String,
     pub parameters: HashMap<String, serde_json::Value>,
-    pub raw_text: String,  // Testo originale per debug
+    pub raw_text: String, // Testo originale per debug
 }
 
 /// Risultato dell'esecuzione di un tool
@@ -51,7 +51,9 @@ impl ToolResult {
             format!(
                 "❌ **{}** fallito:\n```\n{}\n```",
                 self.tool_name,
-                self.error.as_ref().unwrap_or(&"Errore sconosciuto".to_string())
+                self.error
+                    .as_ref()
+                    .unwrap_or(&"Errore sconosciuto".to_string())
             )
         }
     }
@@ -74,15 +76,14 @@ impl AgentSystem {
             "shell_execute".to_string(),
             ToolDefinition {
                 name: "shell_execute".to_string(),
-                description: "Esegue un comando shell. USALO per operazioni sul sistema.".to_string(),
-                parameters: vec![
-                    ToolParameter {
-                        name: "command".to_string(),
-                        param_type: "string".to_string(),
-                        description: "Il comando bash da eseguire".to_string(),
-                        required: true,
-                    },
-                ],
+                description: "Esegue un comando shell. USALO per operazioni sul sistema."
+                    .to_string(),
+                parameters: vec![ToolParameter {
+                    name: "command".to_string(),
+                    param_type: "string".to_string(),
+                    description: "Il comando bash da eseguire".to_string(),
+                    required: true,
+                }],
                 dangerous: true,
             },
         );
@@ -93,14 +94,12 @@ impl AgentSystem {
             ToolDefinition {
                 name: "file_read".to_string(),
                 description: "Legge il contenuto di un file.".to_string(),
-                parameters: vec![
-                    ToolParameter {
-                        name: "path".to_string(),
-                        param_type: "string".to_string(),
-                        description: "Percorso del file da leggere".to_string(),
-                        required: true,
-                    },
-                ],
+                parameters: vec![ToolParameter {
+                    name: "path".to_string(),
+                    param_type: "string".to_string(),
+                    description: "Percorso del file da leggere".to_string(),
+                    required: true,
+                }],
                 dangerous: false,
             },
         );
@@ -278,7 +277,7 @@ impl AgentSystem {
         );
 
         // ========== TOOL MCP SQL SERVER ==========
-        
+
         // Tool: SqlConnect
         tools.insert(
             "sql_connect".to_string(),
@@ -326,13 +325,13 @@ impl AgentSystem {
             "sql_query".to_string(),
             ToolDefinition {
                 name: "sql_query".to_string(),
-                description: "Esegue query SELECT su database SQL Server connesso. SOLO LETTURA - UPDATE/INSERT/DELETE non permessi. Ritorna risultati in JSON.".to_string(),
+                description: "Esegue query SELECT su database SQL Server connesso. SOLO LETTURA - UPDATE/INSERT/DELETE non permessi. Se non specifichi connection_id verrà usata l'ultima connessione attiva.".to_string(),
                 parameters: vec![
                     ToolParameter {
                         name: "connection_id".to_string(),
                         param_type: "string".to_string(),
-                        description: "ID della connessione SQL (ottenuto da sql_connect)".to_string(),
-                        required: true,
+                        description: "ID della connessione SQL (ottenuto da sql_connect). Se omesso, usa l'ultima connessione attiva.".to_string(),
+                        required: false,
                     },
                     ToolParameter {
                         name: "query".to_string(),
@@ -350,13 +349,13 @@ impl AgentSystem {
             "sql_list_tables".to_string(),
             ToolDefinition {
                 name: "sql_list_tables".to_string(),
-                description: "Lista tutte le tabelle e view del database SQL Server. USALO per esplorare struttura database.".to_string(),
+                description: "Lista tutte le tabelle e view del database SQL Server. Se connection_id non è fornito usa l'ultima connessione attiva.".to_string(),
                 parameters: vec![
                     ToolParameter {
                         name: "connection_id".to_string(),
                         param_type: "string".to_string(),
-                        description: "ID della connessione SQL".to_string(),
-                        required: true,
+                        description: "ID della connessione SQL. Se omesso, usa l'ultima connessione attiva.".to_string(),
+                        required: false,
                     },
                 ],
                 dangerous: false,
@@ -368,13 +367,13 @@ impl AgentSystem {
             "sql_describe_table".to_string(),
             ToolDefinition {
                 name: "sql_describe_table".to_string(),
-                description: "Mostra struttura di una tabella (colonne, tipi, nullable). USALO per capire schema prima di query.".to_string(),
+                description: "Mostra struttura di una tabella (colonne, tipi, nullable). Se connection_id non è fornito usa l'ultima connessione attiva.".to_string(),
                 parameters: vec![
                     ToolParameter {
                         name: "connection_id".to_string(),
                         param_type: "string".to_string(),
-                        description: "ID della connessione SQL".to_string(),
-                        required: true,
+                        description: "ID della connessione SQL. Se omesso, usa l'ultima connessione attiva.".to_string(),
+                        required: false,
                     },
                     ToolParameter {
                         name: "schema".to_string(),
@@ -398,13 +397,13 @@ impl AgentSystem {
             "sql_disconnect".to_string(),
             ToolDefinition {
                 name: "sql_disconnect".to_string(),
-                description: "Chiude connessione SQL Server. USALO quando hai finito le query per liberare risorse.".to_string(),
+                description: "Chiude connessione SQL Server. Se non specifichi connection_id verrà chiusa l'ultima connessione attiva.".to_string(),
                 parameters: vec![
                     ToolParameter {
                         name: "connection_id".to_string(),
                         param_type: "string".to_string(),
-                        description: "ID della connessione SQL da chiudere".to_string(),
-                        required: true,
+                        description: "ID della connessione SQL da chiudere. Se omesso, chiude l'ultima connessione attiva.".to_string(),
+                        required: false,
                     },
                 ],
                 dangerous: false,
@@ -420,7 +419,9 @@ impl AgentSystem {
 
     /// Ottiene la descrizione di tutti i tool in formato markdown per il prompt
     pub fn get_tools_description(&self) -> String {
-        let mut desc = String::from("**TOOLS DISPONIBILI** - Puoi usare questi tool per interagire con il sistema.\n\n");
+        let mut desc = String::from(
+            "**TOOLS DISPONIBILI** - Puoi usare questi tool per interagire con il sistema.\n\n",
+        );
         desc.push_str("Per usare un tool, rispondi con il seguente formato JSON:\n");
         desc.push_str("```json\n{\n  \"tool\": \"nome_tool\",\n  \"parameters\": {\n    \"param1\": \"valore1\"\n  }\n}\n```\n\n");
         desc.push_str("**Lista Tool:**\n\n");
@@ -428,18 +429,22 @@ impl AgentSystem {
         for (_, tool) in &self.tools {
             desc.push_str(&format!("### {}\n", tool.name));
             desc.push_str(&format!("{}\n", tool.description));
-            
+
             if !tool.parameters.is_empty() {
                 desc.push_str("**Parametri:**\n");
                 for param in &tool.parameters {
-                    let required = if param.required { "obbligatorio" } else { "opzionale" };
+                    let required = if param.required {
+                        "obbligatorio"
+                    } else {
+                        "opzionale"
+                    };
                     desc.push_str(&format!(
                         "- `{}` ({}): {} - {}\n",
                         param.name, param.param_type, required, param.description
                     ));
                 }
             }
-            
+
             if tool.dangerous {
                 desc.push_str("⚠️ *Tool pericoloso: richiede conferma utente*\n");
             }
@@ -455,22 +460,18 @@ impl AgentSystem {
 
         // Cerca blocchi JSON nel formato ```json ... ```
         let json_regex = regex::Regex::new(r"```json\s*(\{[^`]*\})\s*```").unwrap();
-        
+
         for cap in json_regex.captures_iter(response) {
             if let Some(json_str) = cap.get(1) {
                 let json_text = json_str.as_str();
-                
+
                 // Prova a parsare come tool call
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_text) {
                     if let Some(tool_name) = value.get("tool").and_then(|v| v.as_str()) {
                         let parameters = value
                             .get("parameters")
                             .and_then(|v| v.as_object())
-                            .map(|obj| {
-                                obj.iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect()
-                            })
+                            .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                             .unwrap_or_default();
 
                         calls.push(ToolCall {
@@ -580,19 +581,25 @@ impl AgentSystem {
         }
     }
 
-    async fn execute_file_read(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_file_read(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
             .context("Parametro 'path' mancante")?;
 
-        let content = fs::read_to_string(path)
-            .context(format!("Impossibile leggere file: {}", path))?;
+        let content =
+            fs::read_to_string(path).context(format!("Impossibile leggere file: {}", path))?;
 
         Ok(content)
     }
 
-    async fn execute_file_write(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_file_write(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -603,13 +610,15 @@ impl AgentSystem {
             .and_then(|v| v.as_str())
             .context("Parametro 'content' mancante")?;
 
-        fs::write(path, content)
-            .context(format!("Impossibile scrivere file: {}", path))?;
+        fs::write(path, content).context(format!("Impossibile scrivere file: {}", path))?;
 
         Ok(format!("File scritto: {} ({} bytes)", path, content.len()))
     }
 
-    async fn execute_file_list(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_file_list(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -693,7 +702,10 @@ impl AgentSystem {
         Ok(info)
     }
 
-    async fn execute_browser_open(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_browser_open(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let url_str = params
             .get("url")
             .and_then(|v| v.as_str())
@@ -705,21 +717,22 @@ impl AgentSystem {
             .unwrap_or("pagina web");
 
         // Valida URL
-        let parsed_url = url::Url::parse(url_str)
-            .context("URL non valido")?;
+        let parsed_url = url::Url::parse(url_str).context("URL non valido")?;
 
         if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
             anyhow::bail!("Solo URL http:// o https:// sono supportati");
         }
 
         // Apri nel browser
-        webbrowser::open(url_str)
-            .context("Impossibile aprire il browser")?;
+        webbrowser::open(url_str).context("Impossibile aprire il browser")?;
 
         Ok(format!("Browser aperto con {} - {}", description, url_str))
     }
 
-    async fn execute_web_search(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_web_search(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let query = params
             .get("query")
             .and_then(|v| v.as_str())
@@ -729,13 +742,15 @@ impl AgentSystem {
         let encoded_query = urlencoding::encode(query);
         let search_url = format!("https://www.google.com/search?q={}", encoded_query);
 
-        webbrowser::open(&search_url)
-            .context("Impossibile aprire il browser")?;
+        webbrowser::open(&search_url).context("Impossibile aprire il browser")?;
 
         Ok(format!("Ricerca Google avviata per: '{}'", query))
     }
 
-    async fn execute_map_open(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_map_open(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let location = params
             .get("location")
             .and_then(|v| v.as_str())
@@ -747,34 +762,50 @@ impl AgentSystem {
             .unwrap_or("search");
 
         let encoded_location = urlencoding::encode(location);
-        
+
         let map_url = match mode {
-            "directions" => format!("https://www.google.com/maps/dir/?api=1&destination={}", encoded_location),
-            _ => format!("https://www.google.com/maps/search/?api=1&query={}", encoded_location),
+            "directions" => format!(
+                "https://www.google.com/maps/dir/?api=1&destination={}",
+                encoded_location
+            ),
+            _ => format!(
+                "https://www.google.com/maps/search/?api=1&query={}",
+                encoded_location
+            ),
         };
 
-        webbrowser::open(&map_url)
-            .context("Impossibile aprire Google Maps")?;
+        webbrowser::open(&map_url).context("Impossibile aprire Google Maps")?;
 
-        Ok(format!("Google Maps aperto per: '{}' (modalità: {})", location, mode))
+        Ok(format!(
+            "Google Maps aperto per: '{}' (modalità: {})",
+            location, mode
+        ))
     }
 
-    async fn execute_youtube_search(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_youtube_search(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let query = params
             .get("query")
             .and_then(|v| v.as_str())
             .context("Parametro 'query' mancante")?;
 
         let encoded_query = urlencoding::encode(query);
-        let youtube_url = format!("https://www.youtube.com/results?search_query={}", encoded_query);
+        let youtube_url = format!(
+            "https://www.youtube.com/results?search_query={}",
+            encoded_query
+        );
 
-        webbrowser::open(&youtube_url)
-            .context("Impossibile aprire YouTube")?;
+        webbrowser::open(&youtube_url).context("Impossibile aprire YouTube")?;
 
         Ok(format!("YouTube aperto con ricerca: '{}'", query))
     }
 
-    async fn execute_document_view(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_document_view(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -786,8 +817,7 @@ impl AgentSystem {
         }
 
         // Apri con il programma predefinito del sistema
-        webbrowser::open(path)
-            .context("Impossibile aprire il file")?;
+        webbrowser::open(path).context("Impossibile aprire il file")?;
 
         Ok(format!("File aperto: {}", path))
     }
@@ -827,63 +857,86 @@ use crate::mcp_sql;
 
 // Gestore globale connessioni SQL (statico thread-safe)
 lazy_static::lazy_static! {
-    pub static ref SQL_MANAGER: std::sync::Arc<tokio::sync::Mutex<mcp_sql::SqlConnectionManager>> = 
+    pub static ref SQL_MANAGER: std::sync::Arc<tokio::sync::Mutex<mcp_sql::SqlConnectionManager>> =
         std::sync::Arc::new(tokio::sync::Mutex::new(mcp_sql::SqlConnectionManager::new()));
-    
-    // Storage per i client SQL attivi
-    pub static ref SQL_CLIENTS: std::sync::Arc<tokio::sync::Mutex<HashMap<String, mcp_sql::SqlClient>>> = 
-        std::sync::Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+    // Tiene traccia dell'ultima connessione SQL usata così da poterla riutilizzare
+    pub static ref LAST_SQL_CONNECTION_ID: std::sync::Arc<tokio::sync::Mutex<Option<String>>> =
+        std::sync::Arc::new(tokio::sync::Mutex::new(None));
 }
 
 impl AgentSystem {
     /// Connette a SQL Server e memorizza la connessione
-    async fn execute_sql_connect(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
-        let server = params.get("server")
+    async fn execute_sql_connect(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let server = params
+            .get("server")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Parametro 'server' mancante"))?;
-        
-        let database = params.get("database")
+
+        let database = params
+            .get("database")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Parametro 'database' mancante"))?;
-        
-        let auth_method = params.get("auth_method")
+
+        let auth_method = params
+            .get("auth_method")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Parametro 'auth_method' mancante (usa 'windows' o 'sql')"))?;
-        
+            .ok_or_else(|| {
+                anyhow::anyhow!("Parametro 'auth_method' mancante (usa 'windows' o 'sql')")
+            })?;
+
         // Genera ID connessione unico
         let connection_id = format!("sql_{}", uuid::Uuid::new_v4().to_string());
-        
+
+        let mut stored_username = None;
+        let mut stored_password = None;
+
         // Connetti in base al metodo di autenticazione
         let client = if auth_method == "windows" {
             mcp_sql::connect_windows_auth(server, database).await?
         } else if auth_method == "sql" {
-            let username = params.get("username")
+            let username = params
+                .get("username")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Parametro 'username' richiesto per SQL auth"))?;
-            
-            let password = params.get("password")
+
+            let password = params
+                .get("password")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Parametro 'password' richiesto per SQL auth"))?;
-            
+
+            stored_username = Some(username.to_string());
+            stored_password = Some(password.to_string());
+
             mcp_sql::connect_sql_auth(server, database, username, password).await?
         } else {
-            return Err(anyhow::anyhow!("auth_method non valido: usa 'windows' o 'sql'"));
+            return Err(anyhow::anyhow!(
+                "auth_method non valido: usa 'windows' o 'sql'"
+            ));
         };
-        
-        // Memorizza client e info connessione
-        let mut clients = SQL_CLIENTS.lock().await;
-        clients.insert(connection_id.clone(), client);
-        
+
         let conn_info = mcp_sql::SqlConnection {
             connection_id: connection_id.clone(),
             server: server.to_string(),
             database: database.to_string(),
             auth_type: auth_method.to_string(),
+            username: stored_username,
+            password: stored_password,
         };
-        
+
+        // Rilascia il client dopo aver validato la connessione
+        drop(client);
+
         let manager = SQL_MANAGER.lock().await;
         manager.add_connection(conn_info);
-        
+
+        // Memorizza come connessione attiva predefinita
+        let mut last_conn = LAST_SQL_CONNECTION_ID.lock().await;
+        *last_conn = Some(connection_id.clone());
+
         Ok(format!(
             "✅ Connesso a SQL Server!\n\
             Connection ID: {}\n\
@@ -894,84 +947,173 @@ impl AgentSystem {
             connection_id, server, database, auth_method
         ))
     }
-    
+
     /// Esegue query SQL SELECT
-    async fn execute_sql_query(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
-        let connection_id = params.get("connection_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Parametro 'connection_id' mancante"))?;
-        
-        let query = params.get("query")
+    async fn execute_sql_query(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let connection_id = match params.get("connection_id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => {
+                let last = LAST_SQL_CONNECTION_ID.lock().await;
+                last.clone().ok_or_else(|| anyhow::anyhow!(
+                    "Nessun connection_id fornito e nessuna connessione SQL attiva trovata. Esegui prima sql_connect."
+                ))?
+            }
+        };
+
+        let query = params
+            .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Parametro 'query' mancante"))?;
-        
-        // Ottieni client
-        let mut clients = SQL_CLIENTS.lock().await;
-        let client = clients.get_mut(connection_id)
-            .ok_or_else(|| anyhow::anyhow!("Connessione '{}' non trovata. Usa sql_connect prima.", connection_id))?;
-        
+
+        // Aggiorna la connessione predefinita per i prossimi comandi
+        {
+            let mut last_store = LAST_SQL_CONNECTION_ID.lock().await;
+            *last_store = Some(connection_id.clone());
+        }
+
+        let conn_info = {
+            let manager = SQL_MANAGER.lock().await;
+            manager.get_connection(&connection_id).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Connessione '{}' non trovata. Usa sql_connect prima.",
+                    connection_id
+                )
+            })?
+        };
+
+        let mut client = mcp_sql::connect_with_info(&conn_info).await?;
+
         // Esegui query (con validazione read-only integrata)
-        let result = mcp_sql::execute_query(client, query).await?;
-        
+        let result = mcp_sql::execute_query(&mut client, query).await?;
+
         Ok(format!("📊 Risultati query:\n```json\n{}\n```", result))
     }
-    
+
     /// Lista tutte le tabelle del database
-    async fn execute_sql_list_tables(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
-        let connection_id = params.get("connection_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Parametro 'connection_id' mancante"))?;
-        
-        let mut clients = SQL_CLIENTS.lock().await;
-        let client = clients.get_mut(connection_id)
-            .ok_or_else(|| anyhow::anyhow!("Connessione '{}' non trovata", connection_id))?;
-        
-        let result = mcp_sql::list_tables(client).await?;
-        
-        Ok(format!("📋 Tabelle del database:\n```json\n{}\n```", result))
+    async fn execute_sql_list_tables(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let connection_id = match params.get("connection_id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => {
+                let last = LAST_SQL_CONNECTION_ID.lock().await;
+                last.clone().ok_or_else(|| anyhow::anyhow!(
+                    "Nessun connection_id fornito e nessuna connessione SQL attiva trovata. Esegui prima sql_connect."
+                ))?
+            }
+        };
+
+        {
+            let mut last_store = LAST_SQL_CONNECTION_ID.lock().await;
+            *last_store = Some(connection_id.clone());
+        }
+
+        let conn_info = {
+            let manager = SQL_MANAGER.lock().await;
+            manager
+                .get_connection(&connection_id)
+                .ok_or_else(|| anyhow::anyhow!("Connessione '{}' non trovata", connection_id))?
+        };
+
+        let mut client = mcp_sql::connect_with_info(&conn_info).await?;
+
+        let result = mcp_sql::list_tables(&mut client).await?;
+
+        Ok(format!(
+            "📋 Tabelle del database:\n```json\n{}\n```",
+            result
+        ))
     }
-    
+
     /// Descrive struttura di una tabella
-    async fn execute_sql_describe_table(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
-        let connection_id = params.get("connection_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Parametro 'connection_id' mancante"))?;
-        
-        let schema = params.get("schema")
+    async fn execute_sql_describe_table(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let connection_id = match params.get("connection_id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => {
+                let last = LAST_SQL_CONNECTION_ID.lock().await;
+                last.clone().ok_or_else(|| anyhow::anyhow!(
+                    "Nessun connection_id fornito e nessuna connessione SQL attiva trovata. Esegui prima sql_connect."
+                ))?
+            }
+        };
+
+        let schema = params
+            .get("schema")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Parametro 'schema' mancante (es: 'dbo')"))?;
-        
-        let table = params.get("table")
+
+        let table = params
+            .get("table")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Parametro 'table' mancante"))?;
-        
-        let mut clients = SQL_CLIENTS.lock().await;
-        let client = clients.get_mut(connection_id)
-            .ok_or_else(|| anyhow::anyhow!("Connessione '{}' non trovata", connection_id))?;
-        
-        let result = mcp_sql::describe_table(client, schema, table).await?;
-        
-        Ok(format!("🔍 Struttura tabella {}.{}:\n```json\n{}\n```", schema, table, result))
-    }
-    
-    /// Chiude connessione SQL
-    async fn execute_sql_disconnect(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
-        let connection_id = params.get("connection_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Parametro 'connection_id' mancante"))?;
-        
-        // Rimuovi client
-        let mut clients = SQL_CLIENTS.lock().await;
-        let removed = clients.remove(connection_id);
-        
-        if removed.is_none() {
-            return Err(anyhow::anyhow!("Connessione '{}' non trovata", connection_id));
+
+        {
+            let mut last_store = LAST_SQL_CONNECTION_ID.lock().await;
+            *last_store = Some(connection_id.clone());
         }
-        
+
+        let conn_info = {
+            let manager = SQL_MANAGER.lock().await;
+            manager
+                .get_connection(&connection_id)
+                .ok_or_else(|| anyhow::anyhow!("Connessione '{}' non trovata", connection_id))?
+        };
+
+        let mut client = mcp_sql::connect_with_info(&conn_info).await?;
+
+        let result = mcp_sql::describe_table(&mut client, schema, table).await?;
+
+        Ok(format!(
+            "🔍 Struttura tabella {}.{}:\n```json\n{}\n```",
+            schema, table, result
+        ))
+    }
+
+    /// Chiude connessione SQL
+    async fn execute_sql_disconnect(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let connection_id = match params.get("connection_id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => {
+                let last = LAST_SQL_CONNECTION_ID.lock().await;
+                last.clone().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Nessun connection_id fornito e nessuna connessione SQL attiva trovata."
+                    )
+                })?
+            }
+        };
+
         // Rimuovi info dal manager
         let manager = SQL_MANAGER.lock().await;
-        manager.remove_connection(connection_id);
-        
-        Ok(format!("✅ Connessione '{}' chiusa correttamente.", connection_id))
+        let removed = manager.remove_connection(&connection_id);
+
+        if removed.is_none() {
+            return Err(anyhow::anyhow!(
+                "Connessione '{}' non trovata",
+                connection_id
+            ));
+        }
+
+        {
+            let mut last_store = LAST_SQL_CONNECTION_ID.lock().await;
+            if last_store.as_ref() == Some(&connection_id) {
+                *last_store = None;
+            }
+        }
+
+        Ok(format!(
+            "✅ Connessione '{}' chiusa correttamente.",
+            connection_id
+        ))
     }
 }

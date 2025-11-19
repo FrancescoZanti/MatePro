@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
+use calamine::{open_workbook, Ods, Reader, Xls, Xlsx};
 use eframe::egui;
+use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
+use lopdf::Document;
 use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
-use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
-use std::path::PathBuf;
 use std::fs;
-use lopdf::Document;
-use calamine::{Reader, open_workbook, Xlsx, Xls, Ods};
+use std::net::IpAddr;
+use std::path::PathBuf;
 
 mod agent;
 mod mcp_sql;
@@ -20,7 +20,7 @@ fn get_timestamp() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
+
     // Calcola ore e minuti dal timestamp Unix (considera fuso orario UTC+1 per Italia)
     let total_seconds = now + 3600; // +1 ora per CET/CEST
     let hours = (total_seconds / 3600) % 24;
@@ -40,9 +40,9 @@ struct Message {
     role: String,
     content: String,
     #[serde(skip)]
-    hidden: bool,  // Se true, non mostrare nella chat UI
+    hidden: bool, // Se true, non mostrare nella chat UI
     #[serde(skip)]
-    timestamp: Option<String>,  // Orario del messaggio
+    timestamp: Option<String>, // Orario del messaggio
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,22 +53,22 @@ struct ChatResponse {
 #[derive(Debug, Clone)]
 struct ModelInfo {
     name: String,
-    size: u64,  // Size in bytes
+    size: u64, // Size in bytes
 }
 
 impl ModelInfo {
     fn size_gb(&self) -> f64 {
-        self.size as f64 / 1_073_741_824.0  // Convert bytes to GB
+        self.size as f64 / 1_073_741_824.0 // Convert bytes to GB
     }
-    
+
     fn weight_category(&self) -> (&str, egui::Color32) {
         let gb = self.size_gb();
         if gb < 4.0 {
-            ("🟢", egui::Color32::from_rgb(52, 199, 89))  // Verde - leggero
+            ("🟢", egui::Color32::from_rgb(52, 199, 89)) // Verde - leggero
         } else if gb < 8.0 {
-            ("🟡", egui::Color32::from_rgb(255, 204, 0))  // Giallo - medio
+            ("🟡", egui::Color32::from_rgb(255, 204, 0)) // Giallo - medio
         } else {
-            ("🔴", egui::Color32::from_rgb(255, 59, 48))  // Rosso - pesante
+            ("🔴", egui::Color32::from_rgb(255, 59, 48)) // Rosso - pesante
         }
     }
 }
@@ -138,13 +138,13 @@ impl OllamaClient {
         let chat_response: ChatResponse = response.json().await?;
         Ok(chat_response.message.content)
     }
-    
+
     async fn check_server(url: &str) -> bool {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_millis(1500))
             .build()
             .unwrap();
-        
+
         match client.get(format!("{}/api/tags", url)).send().await {
             Ok(response) => response.status().is_success(),
             Err(_) => false,
@@ -154,28 +154,29 @@ impl OllamaClient {
 
 async fn scan_local_network() -> Vec<String> {
     let mut servers = Vec::new();
-    
+
     // Controlla localhost
     if OllamaClient::check_server("http://localhost:11434").await {
         servers.push("http://localhost:11434".to_string());
     }
-    
+
     // Controlla 127.0.0.1
-    if OllamaClient::check_server("http://127.0.0.1:11434").await 
-        && !servers.contains(&"http://127.0.0.1:11434".to_string()) {
+    if OllamaClient::check_server("http://127.0.0.1:11434").await
+        && !servers.contains(&"http://127.0.0.1:11434".to_string())
+    {
         servers.push("http://127.0.0.1:11434".to_string());
     }
-    
+
     // Ottieni l'IP locale
     if let Ok(local_ip) = local_ip_address::local_ip() {
         match local_ip {
             IpAddr::V4(ip) => {
                 let octets = ip.octets();
                 let base = format!("{}.{}.{}", octets[0], octets[1], octets[2]);
-                
+
                 // Scansiona gli IP comuni nella rete locale (range ristretto per velocità)
                 let mut handles = vec![];
-                
+
                 for i in 1..255 {
                     let url = format!("http://{}.{}:11434", base, i);
                     let handle = tokio::spawn(async move {
@@ -187,7 +188,7 @@ async fn scan_local_network() -> Vec<String> {
                     });
                     handles.push(handle);
                 }
-                
+
                 // Raccogli i risultati
                 for handle in handles {
                     if let Ok(Some(url)) = handle.await {
@@ -200,7 +201,7 @@ async fn scan_local_network() -> Vec<String> {
             _ => {}
         }
     }
-    
+
     servers
 }
 
@@ -208,28 +209,26 @@ async fn scan_local_network() -> Vec<String> {
 fn extract_text_from_pdf(path: &PathBuf) -> Result<String> {
     let doc = Document::load(path)?;
     let mut text = String::new();
-    
+
     for page_num in 1..=doc.get_pages().len() {
         if let Ok(page_text) = doc.extract_text(&[page_num as u32]) {
             text.push_str(&page_text);
             text.push('\n');
         }
     }
-    
+
     if text.trim().is_empty() {
         anyhow::bail!("Impossibile estrarre testo dal PDF");
     }
-    
+
     Ok(text)
 }
 
 fn extract_text_from_excel(path: &PathBuf) -> Result<String> {
-    let extension = path.extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
     let mut text = String::new();
-    
+
     match extension.to_lowercase().as_str() {
         "xlsx" => {
             let mut workbook: Xlsx<_> = open_workbook(path)?;
@@ -237,9 +236,8 @@ fn extract_text_from_excel(path: &PathBuf) -> Result<String> {
                 if let Ok(range) = workbook.worksheet_range(&sheet_name) {
                     text.push_str(&format!("=== Foglio: {} ===\n", sheet_name));
                     for row in range.rows() {
-                        let row_text: Vec<String> = row.iter()
-                            .map(|cell| format!("{}", cell))
-                            .collect();
+                        let row_text: Vec<String> =
+                            row.iter().map(|cell| format!("{}", cell)).collect();
                         text.push_str(&row_text.join("\t"));
                         text.push('\n');
                     }
@@ -253,9 +251,8 @@ fn extract_text_from_excel(path: &PathBuf) -> Result<String> {
                 if let Ok(range) = workbook.worksheet_range(&sheet_name) {
                     text.push_str(&format!("=== Foglio: {} ===\n", sheet_name));
                     for row in range.rows() {
-                        let row_text: Vec<String> = row.iter()
-                            .map(|cell| format!("{}", cell))
-                            .collect();
+                        let row_text: Vec<String> =
+                            row.iter().map(|cell| format!("{}", cell)).collect();
                         text.push_str(&row_text.join("\t"));
                         text.push('\n');
                     }
@@ -269,9 +266,8 @@ fn extract_text_from_excel(path: &PathBuf) -> Result<String> {
                 if let Ok(range) = workbook.worksheet_range(&sheet_name) {
                     text.push_str(&format!("=== Foglio: {} ===\n", sheet_name));
                     for row in range.rows() {
-                        let row_text: Vec<String> = row.iter()
-                            .map(|cell| format!("{}", cell))
-                            .collect();
+                        let row_text: Vec<String> =
+                            row.iter().map(|cell| format!("{}", cell)).collect();
                         text.push_str(&row_text.join("\t"));
                         text.push('\n');
                     }
@@ -281,19 +277,17 @@ fn extract_text_from_excel(path: &PathBuf) -> Result<String> {
         }
         _ => anyhow::bail!("Formato non supportato: {}", extension),
     }
-    
+
     if text.trim().is_empty() {
         anyhow::bail!("Il file è vuoto");
     }
-    
+
     Ok(text)
 }
 
 fn extract_text_from_file(path: &PathBuf) -> Result<String> {
-    let extension = path.extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
     match extension.to_lowercase().as_str() {
         "pdf" => extract_text_from_pdf(path),
         "xlsx" | "xls" | "ods" => extract_text_from_excel(path),
@@ -395,7 +389,7 @@ impl OllamaChatApp {
         app.start_network_scan();
         app
     }
-    
+
     fn start_network_scan(&mut self) {
         self.state = AppState::ScanningNetwork;
         self.scanning_promise = Some(Promise::spawn_thread("scan_network", move || {
@@ -404,15 +398,15 @@ impl OllamaChatApp {
                 .block_on(scan_local_network())
         }));
     }
-    
+
     fn load_models(&mut self) {
         let client = OllamaClient::new(self.ollama_url.clone());
         let client_clone = client.clone();
-        
+
         self.client = Some(client);
         self.state = AppState::LoadingModels;
         self.error_message = None;
-        
+
         self.loading_models_promise = Some(Promise::spawn_thread("load_models", move || {
             tokio::runtime::Runtime::new()
                 .unwrap()
@@ -424,14 +418,18 @@ impl OllamaChatApp {
         self.file_loading_promise = Some(Promise::spawn_thread("file_picker", move || {
             // Usa il dialog sincrono invece di async
             if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Documenti", &["pdf", "xlsx", "xls", "ods", "txt", "md", "csv"])
+                .add_filter(
+                    "Documenti",
+                    &["pdf", "xlsx", "xls", "ods", "txt", "md", "csv"],
+                )
                 .pick_file()
             {
-                let filename = path.file_name()
+                let filename = path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("file")
                     .to_string();
-                
+
                 match extract_text_from_file(&path) {
                     Ok(content) => Ok((filename, content)),
                     Err(e) => Err(e),
@@ -451,7 +449,7 @@ impl OllamaChatApp {
                     return;
                 }
             }
-            
+
             // Esegui il tool
             self.execute_pending_tools();
         }
@@ -460,7 +458,7 @@ impl OllamaChatApp {
     fn execute_pending_tools(&mut self) {
         let tools_to_execute = std::mem::take(&mut self.pending_tool_calls);
         let mut agent_system = self.agent_system.clone();
-        
+
         self.tool_execution_promise = Some(Promise::spawn_thread("execute_tools", move || {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let mut results = Vec::new();
@@ -516,13 +514,13 @@ impl OllamaChatApp {
 
     fn test_sql_connection(&mut self) {
         self.sql_connection_status = Some("connecting".to_string());
-        
+
         let server = self.sql_server.clone();
         let database = self.sql_database.clone();
         let auth_method = self.sql_auth_method.clone();
         let username = self.sql_username.clone();
         let password = self.sql_password.clone();
-        
+
         self.sql_test_promise = Some(Promise::spawn_thread("test_sql", move || {
             tokio::runtime::Runtime::new()
                 .unwrap()
@@ -533,28 +531,38 @@ impl OllamaChatApp {
                     } else {
                         mcp_sql::connect_sql_auth(&server, &database, &username, &password).await
                     };
-                    
+
                     match connection_result {
-                        Ok(client) => {
-                            // Genera un ID per la connessione
-                            let connection_id = format!("conn_{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
-                            
-                            // Salva il client nel manager globale
-                            let mut clients = agent::SQL_CLIENTS.lock().await;
-                            clients.insert(connection_id.clone(), client);
-                            drop(clients);
-                            
-                            // Registra nel manager
+                        Ok(_client) => {
+                            // Connessione riuscita, genera ID e salva info
+                            let connection_id = format!(
+                                "conn_{}",
+                                uuid::Uuid::new_v4().to_string()[..8].to_string()
+                            );
+
                             let conn_info = mcp_sql::SqlConnection {
                                 connection_id: connection_id.clone(),
                                 server: server.clone(),
                                 database: database.clone(),
                                 auth_type: auth_method.clone(),
+                                username: if auth_method == "sql" {
+                                    Some(username.clone())
+                                } else {
+                                    None
+                                },
+                                password: if auth_method == "sql" {
+                                    Some(password.clone())
+                                } else {
+                                    None
+                                },
                             };
-                            
+
                             let manager = agent::SQL_MANAGER.lock().await;
                             manager.add_connection(conn_info);
-                            
+
+                            let mut last_conn = agent::LAST_SQL_CONNECTION_ID.lock().await;
+                            *last_conn = Some(connection_id.clone());
+
                             Ok(connection_id)
                         }
                         Err(e) => Err(e),
@@ -567,10 +575,10 @@ impl OllamaChatApp {
         if self.input_text.trim().is_empty() && self.attached_files.is_empty() {
             return;
         }
-        
+
         // Resetta il contatore di iterazioni per nuova richiesta utente
         self.current_agent_iteration = 0;
-        
+
         // Aggiungi istruzioni di formattazione solo alla prima interazione
         if !self.system_prompt_added && self.conversation.is_empty() {
             // Usa un approccio user/assistant per garantire che il modello capisca
@@ -593,33 +601,42 @@ Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string();
                 instruction_content.push_str("1. **Visualizzazioni Web**: Se l'utente chiede di vedere/visualizzare qualcosa online, usa `browser_open`, `web_search`, `map_open` o `youtube_search`\n");
                 instruction_content.push_str("2. **Informazioni in Tempo Reale**: Per meteo, notizie, risultati sportivi, usa `web_search` per aprire risultati aggiornati\n");
                 instruction_content.push_str("3. **Mappe e Luoghi**: Per indirizzi, ristoranti, percorsi stradali, usa `map_open`\n");
-                instruction_content.push_str("4. **Video e Tutorial**: Per guide, musica, film, usa `youtube_search`\n");
+                instruction_content.push_str(
+                    "4. **Video e Tutorial**: Per guide, musica, film, usa `youtube_search`\n",
+                );
                 instruction_content.push_str("5. **Documenti Locali**: Per PDF, immagini, file esistenti, usa `document_view`\n");
                 instruction_content.push_str("6. **Task Multi-Step**: Combina più tool in sequenza per completare task complessi\n");
-                instruction_content.push_str("7. **Spiega Prima**: Prima di usare tool, spiega brevemente cosa farai\n\n");
+                instruction_content.push_str(
+                    "7. **Spiega Prima**: Prima di usare tool, spiega brevemente cosa farai\n\n",
+                );
                 instruction_content.push_str("**ESEMPI DI RICONOSCIMENTO AZIONI COMPLESSE:**\n");
-                instruction_content.push_str("- \"mostrami il meteo\" → web_search per meteo in tempo reale\n");
+                instruction_content
+                    .push_str("- \"mostrami il meteo\" → web_search per meteo in tempo reale\n");
                 instruction_content.push_str("- \"apri Google Maps con Milano\" → map_open\n");
-                instruction_content.push_str("- \"cerca video tutorial Python\" → youtube_search\n");
-                instruction_content.push_str("- \"vai su Wikipedia\" → browser_open con URL Wikipedia\n");
-                instruction_content.push_str("- \"come arrivo a Roma da Milano\" → map_open con mode=directions\n");
+                instruction_content
+                    .push_str("- \"cerca video tutorial Python\" → youtube_search\n");
+                instruction_content
+                    .push_str("- \"vai su Wikipedia\" → browser_open con URL Wikipedia\n");
+                instruction_content.push_str(
+                    "- \"come arrivo a Roma da Milano\" → map_open con mode=directions\n",
+                );
                 instruction_content.push_str("- \"mostrami il sito di GitHub\" → browser_open\n");
             }
-            
+
             let instruction = Message {
                 role: "user".to_string(),
                 content: instruction_content,
-                hidden: true,  // Non mostrare nella UI
-                timestamp: None,  // Messaggi di sistema senza timestamp
+                hidden: true,    // Non mostrare nella UI
+                timestamp: None, // Messaggi di sistema senza timestamp
             };
-            
+
             let confirmation = Message {
                 role: "assistant".to_string(),
                 content: "Perfetto! Userò solo caratteri Unicode (√, ², ³, π, ±, ecc.) e notazione testuale chiara (sqrt, ^2, /) per le formule matematiche. Non userò LaTeX. Sono pronto ad aiutarti!".to_string(),
                 hidden: true,  // Non mostrare nella UI
                 timestamp: None,  // Messaggi di sistema senza timestamp
             };
-            
+
             self.conversation.push(instruction);
             self.conversation.push(confirmation);
             self.system_prompt_added = true;
@@ -627,7 +644,7 @@ Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string();
 
         // Costruisci il messaggio per Ollama includendo i file allegati
         let mut full_content = String::new();
-        
+
         if !self.attached_files.is_empty() {
             full_content.push_str("File allegati:\n\n");
             for (filename, file_content) in &self.attached_files {
@@ -635,12 +652,14 @@ Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string();
             }
             full_content.push_str("---\n\n");
         }
-        
+
         full_content.push_str(self.input_text.trim());
 
         // Messaggio che l'utente vede (solo testo, senza contenuto file)
         let display_content = if !self.attached_files.is_empty() {
-            let files_list: Vec<String> = self.attached_files.iter()
+            let files_list: Vec<String> = self
+                .attached_files
+                .iter()
                 .map(|(name, _)| format!("📎 {}", name))
                 .collect();
             format!("{}\n\n{}", files_list.join("\n"), self.input_text.trim())
@@ -656,7 +675,7 @@ Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string();
             timestamp: Some(get_timestamp()),
         };
         self.conversation.push(user_message_display);
-        
+
         self.input_text.clear();
         self.attached_files.clear(); // Pulisci i file allegati dopo l'invio
         self.scroll_to_bottom = true;
@@ -664,7 +683,7 @@ Conferma che userai solo Unicode e notazione testuale, MAI LaTeX.".to_string();
         if let (Some(client), Some(model)) = (&self.client, &self.selected_model) {
             let client_clone = client.clone();
             let model_clone = model.clone();
-            
+
             // Crea una copia della conversazione con il contenuto completo per l'ultimo messaggio
             let mut messages_for_api = self.conversation.clone();
             if let Some(last_msg) = messages_for_api.last_mut() {
@@ -684,9 +703,9 @@ impl eframe::App for OllamaChatApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Usa il tema di sistema (chiaro/scuro)
         let is_dark = ctx.style().visuals.dark_mode;
-        
+
         let mut style = (*ctx.style()).clone();
-        
+
         // Font più grandi e leggibili
         style.text_styles.insert(
             egui::TextStyle::Body,
@@ -700,19 +719,19 @@ impl eframe::App for OllamaChatApp {
             egui::TextStyle::Heading,
             egui::FontId::new(22.0, egui::FontFamily::Proportional),
         );
-        
+
         // Spaziatura generosa
         style.spacing.item_spacing = egui::vec2(10.0, 10.0);
         style.spacing.button_padding = egui::vec2(14.0, 8.0);
         style.spacing.window_margin = egui::Margin::same(16.0);
-        
+
         // Arrotondamenti più pronunciati
         style.visuals.window_rounding = egui::Rounding::same(12.0);
         style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
         style.visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
         style.visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
         style.visuals.widgets.active.rounding = egui::Rounding::same(8.0);
-        
+
         // Colori adattivi al tema
         if is_dark {
             // Tema scuro
@@ -727,9 +746,9 @@ impl eframe::App for OllamaChatApp {
             style.visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(229, 229, 234);
             style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(229, 229, 234);
         }
-        
+
         style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0, 122, 255);
-        
+
         // Ombre sottili
         style.visuals.window_shadow = egui::Shadow {
             offset: egui::vec2(0.0, 4.0),
@@ -743,9 +762,9 @@ impl eframe::App for OllamaChatApp {
             spread: 0.0,
             color: egui::Color32::from_black_alpha(30),
         };
-        
+
         ctx.set_style(style);
-        
+
         // Controlla promise per il caricamento dei modelli
         if let Some(promise) = &self.loading_models_promise {
             if let Some(result) = promise.ready() {
@@ -763,7 +782,10 @@ impl eframe::App for OllamaChatApp {
                         }
                     }
                     Err(e) => {
-                        self.error_message = Some(format!("Errore: {}. Assicurati che Ollama sia in esecuzione.", e));
+                        self.error_message = Some(format!(
+                            "Errore: {}. Assicurati che Ollama sia in esecuzione.",
+                            e
+                        ));
                         self.state = AppState::Setup;
                     }
                 }
@@ -776,7 +798,8 @@ impl eframe::App for OllamaChatApp {
             if let Some(result) = promise.ready() {
                 match result {
                     Ok((filename, content)) => {
-                        self.attached_files.push((filename.clone(), content.clone()));
+                        self.attached_files
+                            .push((filename.clone(), content.clone()));
                     }
                     Err(e) => {
                         if e.to_string() != "Nessun file selezionato" {
@@ -801,7 +824,7 @@ impl eframe::App for OllamaChatApp {
                         });
                         self.scroll_to_bottom = true;
                         self.attached_files.clear(); // Pulisci file dopo invio
-                        
+
                         // Se modalità agente abilitata, cerca tool calls nella risposta
                         if self.agent_mode_enabled {
                             let tool_calls = self.agent_system.parse_tool_calls(response);
@@ -830,7 +853,7 @@ impl eframe::App for OllamaChatApp {
                         for result in results {
                             tool_results_text.push_str(&result.to_markdown());
                             tool_results_text.push_str("\n\n");
-                            
+
                             // Mostra anche un messaggio visibile all'utente
                             self.conversation.push(Message {
                                 role: "system".to_string(),
@@ -839,7 +862,7 @@ impl eframe::App for OllamaChatApp {
                                 timestamp: Some(get_timestamp()),
                             });
                         }
-                        
+
                         // Aggiungi i risultati al context per il LLM
                         self.conversation.push(Message {
                             role: "user".to_string(),
@@ -847,15 +870,17 @@ impl eframe::App for OllamaChatApp {
                             hidden: true,
                             timestamp: None,
                         });
-                        
+
                         self.scroll_to_bottom = true;
-                        
+
                         // Incrementa iterazioni e continua il ciclo agentico se necessario
                         self.current_agent_iteration += 1;
                         if self.current_agent_iteration < self.max_agent_iterations {
                             self.continue_agent_loop();
                         } else {
-                            self.error_message = Some("Raggiunto limite massimo di iterazioni agentiche".to_string());
+                            self.error_message = Some(
+                                "Raggiunto limite massimo di iterazioni agentiche".to_string(),
+                            );
                         }
                     }
                     Err(e) => {
@@ -871,12 +896,12 @@ impl eframe::App for OllamaChatApp {
             if let Some(servers) = promise.ready() {
                 self.discovered_servers = servers.clone();
                 self.state = AppState::Setup;
-                
+
                 // Se c'è almeno un server, usa il primo come default
                 if !servers.is_empty() {
                     self.ollama_url = servers[0].clone();
                 }
-                
+
                 self.scanning_promise = None;
             }
         }
@@ -1439,66 +1464,76 @@ impl eframe::App for OllamaChatApp {
         if let Some(tool_call) = self.awaiting_confirmation.clone() {
             let mut should_confirm = false;
             let mut should_cancel = false;
-            
+
             egui::Window::new("⚠️ Conferma Operazione")
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     ui.set_min_width(400.0);
-                    
+
                     ui.vertical_centered(|ui| {
                         ui.add_space(10.0);
                         ui.label(
-                            egui::RichText::new("L'agente vuole eseguire un'operazione potenzialmente pericolosa:")
-                                .size(15.0)
+                            egui::RichText::new(
+                                "L'agente vuole eseguire un'operazione potenzialmente pericolosa:",
+                            )
+                            .size(15.0),
                         );
                         ui.add_space(12.0);
-                        
+
                         // Mostra dettagli del tool
                         egui::Frame::none()
                             .fill(egui::Color32::from_rgb(248, 248, 248))
                             .rounding(egui::Rounding::same(8.0))
                             .inner_margin(egui::Margin::same(12.0))
                             .show(ui, |ui| {
-                                ui.label(egui::RichText::new(format!("Tool: {}", tool_call.tool_name)).strong());
+                                ui.label(
+                                    egui::RichText::new(format!("Tool: {}", tool_call.tool_name))
+                                        .strong(),
+                                );
                                 ui.add_space(8.0);
                                 ui.label("Parametri:");
                                 for (key, value) in &tool_call.parameters {
                                     ui.label(format!("  {}: {}", key, value));
                                 }
                             });
-                        
+
                         ui.add_space(16.0);
-                        
+
                         ui.horizontal(|ui| {
                             let allow_btn = egui::Button::new(
-                                egui::RichText::new("✓ Consenti").size(14.0).color(egui::Color32::WHITE)
+                                egui::RichText::new("✓ Consenti")
+                                    .size(14.0)
+                                    .color(egui::Color32::WHITE),
                             )
                             .fill(egui::Color32::from_rgb(52, 199, 89))
                             .min_size(egui::vec2(150.0, 36.0));
-                            
-                            if ui.add(allow_btn).on_hover_text("Esegui l'operazione").clicked() {
+
+                            if ui
+                                .add(allow_btn)
+                                .on_hover_text("Esegui l'operazione")
+                                .clicked()
+                            {
                                 should_confirm = true;
                             }
-                            
+
                             ui.add_space(8.0);
-                            
-                            let cancel_btn = egui::Button::new(
-                                egui::RichText::new("✕ Annulla").size(14.0)
-                            )
-                            .fill(egui::Color32::from_rgb(255, 59, 48))
-                            .min_size(egui::vec2(150.0, 36.0));
-                            
+
+                            let cancel_btn =
+                                egui::Button::new(egui::RichText::new("✕ Annulla").size(14.0))
+                                    .fill(egui::Color32::from_rgb(255, 59, 48))
+                                    .min_size(egui::vec2(150.0, 36.0));
+
                             if ui.add(cancel_btn).on_hover_text("Non eseguire").clicked() {
                                 should_cancel = true;
                             }
                         });
-                        
+
                         ui.add_space(10.0);
                     });
                 });
-            
+
             if should_confirm {
                 self.confirm_dangerous_tool();
             } else if should_cancel {
@@ -1510,7 +1545,7 @@ impl eframe::App for OllamaChatApp {
         if self.show_sql_config {
             let mut should_close = false;
             let mut should_test = false;
-            
+
             egui::Window::new("🗄️ Configurazione SQL Server")
                 .collapsible(false)
                 .resizable(false)
@@ -1646,16 +1681,16 @@ impl eframe::App for OllamaChatApp {
                         ui.add_space(10.0);
                     });
                 });
-            
+
             if should_close {
                 self.show_sql_config = false;
             }
-            
+
             if should_test {
                 self.test_sql_connection();
             }
         }
-        
+
         // Controlla promise test connessione SQL
         if let Some(promise) = &self.sql_test_promise {
             if let Some(result) = promise.ready() {
@@ -1674,12 +1709,13 @@ impl eframe::App for OllamaChatApp {
         }
 
         // Richiedi un nuovo frame se ci sono promise in corso
-        if self.scanning_promise.is_some() 
-            || self.loading_models_promise.is_some() 
+        if self.scanning_promise.is_some()
+            || self.loading_models_promise.is_some()
             || self.chat_promise.is_some()
             || self.file_loading_promise.is_some()
             || self.tool_execution_promise.is_some()
-            || self.sql_test_promise.is_some() {
+            || self.sql_test_promise.is_some()
+        {
             ctx.request_repaint();
         }
     }

@@ -2,12 +2,12 @@
 // Gestione connessioni SQL Server con supporto autenticazione Windows/SQL
 // IMPORTANTE: Solo operazioni READ-ONLY (SELECT)
 
-use anyhow::{Result, anyhow};
-use tiberius::{Client, Config, AuthMethod, Query};
-use tokio::net::TcpStream;
-use tokio_util::compat::{TokioAsyncWriteCompatExt, Compat};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tiberius::{AuthMethod, Client, Config, Query};
+use tokio::net::TcpStream;
+use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 // Type alias per semplificare le signature
 pub type SqlClient = Client<Compat<TcpStream>>;
@@ -19,6 +19,8 @@ pub struct SqlConnection {
     pub server: String,
     pub database: String,
     pub auth_type: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 /// Gestore globale delle connessioni SQL
@@ -61,14 +63,26 @@ impl SqlConnectionManager {
 /// Valida che una query SQL sia di sola lettura (SELECT)
 pub fn validate_readonly_query(query: &str) -> Result<()> {
     let query_upper = query.trim().to_uppercase();
-    
+
     // Lista delle parole chiave vietate (operazioni di scrittura)
     let forbidden_keywords = [
-        "UPDATE", "INSERT", "DELETE", "DROP", "CREATE", 
-        "ALTER", "TRUNCATE", "EXEC", "EXECUTE", "SP_",
-        "XP_", "MERGE", "BULK", "WRITETEXT", "UPDATETEXT"
+        "UPDATE",
+        "INSERT",
+        "DELETE",
+        "DROP",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "EXEC",
+        "EXECUTE",
+        "SP_",
+        "XP_",
+        "MERGE",
+        "BULK",
+        "WRITETEXT",
+        "UPDATETEXT",
     ];
-    
+
     // Rimuovi commenti SQL (-- e /* */)
     let without_line_comments: String = query_upper
         .lines()
@@ -81,9 +95,9 @@ pub fn validate_readonly_query(query: &str) -> Result<()> {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    
+
     let without_block_comments = remove_block_comments(&without_line_comments);
-    
+
     // Controlla se contiene parole chiave vietate
     for keyword in &forbidden_keywords {
         if without_block_comments.contains(keyword) {
@@ -93,17 +107,18 @@ pub fn validate_readonly_query(query: &str) -> Result<()> {
             ));
         }
     }
-    
+
     // Deve iniziare con SELECT, WITH (CTE), o essere una DECLARE per variabili
     let trimmed = without_block_comments.trim();
-    if !trimmed.starts_with("SELECT") 
-        && !trimmed.starts_with("WITH") 
-        && !trimmed.starts_with("DECLARE") {
+    if !trimmed.starts_with("SELECT")
+        && !trimmed.starts_with("WITH")
+        && !trimmed.starts_with("DECLARE")
+    {
         return Err(anyhow!(
             "Query non permessa: deve iniziare con SELECT, WITH o DECLARE. Solo operazioni di lettura sono consentite."
         ));
     }
-    
+
     Ok(())
 }
 
@@ -112,7 +127,7 @@ fn remove_block_comments(sql: &str) -> String {
     let mut result = String::new();
     let mut in_comment = false;
     let mut chars = sql.chars().peekable();
-    
+
     while let Some(c) = chars.next() {
         if !in_comment {
             if c == '/' && chars.peek() == Some(&'*') {
@@ -128,31 +143,29 @@ fn remove_block_comments(sql: &str) -> String {
             }
         }
     }
-    
+
     result
 }
 
 /// Connette a SQL Server con autenticazione Windows (dominio)
 /// NOTA: Autenticazione Windows richiede funzionalità specifiche del sistema operativo
 /// Su Linux potrebbe richiedere configurazione Kerberos
-pub async fn connect_windows_auth(
-    server: &str,
-    database: &str,
-) -> Result<SqlClient> {
+pub async fn connect_windows_auth(server: &str, database: &str) -> Result<SqlClient> {
     #[cfg(windows)]
     {
         let mut config = Config::new();
         config.host(server);
         config.database(database);
         // Su Windows usa SSPI (Windows Integrated Auth)
-        config.authentication(AuthMethod::windows(""));  
+        // Usa le credenziali correnti del processo per l'autenticazione integrata
+        config.authentication(AuthMethod::Integrated);
         config.trust_cert();
-        
+
         let tcp = TcpStream::connect(config.get_addr()).await?;
         let client = Client::connect(config, tcp.compat_write()).await?;
         Ok(client)
     }
-    
+
     #[cfg(not(windows))]
     {
         // Su Linux/Mac l'autenticazione Windows non è supportata direttamente
@@ -161,7 +174,8 @@ pub async fn connect_windows_auth(
             "Autenticazione Windows non supportata su questo sistema operativo.\n\
             Su Linux/macOS usa autenticazione SQL (username/password).\n\
             Server: {}, Database: {}",
-            server, database
+            server,
+            database
         ))
     }
 }
@@ -178,27 +192,24 @@ pub async fn connect_sql_auth(
     config.database(database);
     config.authentication(AuthMethod::sql_server(username, password));
     config.trust_cert();
-    
+
     let tcp = TcpStream::connect(config.get_addr()).await?;
     let client = Client::connect(config, tcp.compat_write()).await?;
-    
+
     Ok(client)
 }
 
 /// Esegue una query SELECT e ritorna risultati come JSON
-pub async fn execute_query(
-    client: &mut SqlClient,
-    query: &str,
-) -> Result<String> {
+pub async fn execute_query(client: &mut SqlClient, query: &str) -> Result<String> {
     // Valida che sia read-only
     validate_readonly_query(query)?;
-    
+
     // Esegue la query
     let stream = Query::new(query).query(client).await?;
-    
+
     // Raccogli tutti i risultati
     let rows = stream.into_first_result().await?;
-    
+
     // Costruisci JSON semplificato
     let mut result_rows = Vec::new();
     for row in rows {
@@ -210,21 +221,19 @@ pub async fn execute_query(
         }
         result_rows.push(format!("{:?}", row));
     }
-    
+
     let result = serde_json::json!({
         "success": true,
         "row_count": result_rows.len(),
         "rows": result_rows,
         "message": "Query eseguita con successo"
     });
-    
+
     Ok(serde_json::to_string_pretty(&result)?)
 }
 
 /// Lista tutte le tabelle del database
-pub async fn list_tables(
-    client: &mut SqlClient,
-) -> Result<String> {
+pub async fn list_tables(client: &mut SqlClient) -> Result<String> {
     let query = r#"
         SELECT 
             TABLE_SCHEMA as [Schema],
@@ -234,7 +243,7 @@ pub async fn list_tables(
         WHERE TABLE_TYPE IN ('BASE TABLE', 'VIEW')
         ORDER BY TABLE_SCHEMA, TABLE_NAME
     "#;
-    
+
     execute_query(client, query).await
 }
 
@@ -260,7 +269,7 @@ pub async fn describe_table(
         schema.replace("'", "''"), // Escape singole quote
         table_name.replace("'", "''")
     );
-    
+
     execute_query(client, &query).await
 }
 
@@ -280,10 +289,28 @@ pub async fn test_connection(
         let pass = password.ok_or_else(|| anyhow!("Password richiesta per SQL Auth"))?;
         connect_sql_auth(server, database, user, pass).await?
     };
-    
+
     // Query semplice per testare
     let test_query = "SELECT @@VERSION as SqlVersion, DB_NAME() as CurrentDatabase";
     execute_query(&mut client, test_query).await
+}
+
+/// Crea un client SQL a partire dalle informazioni memorizzate per una connessione
+pub async fn connect_with_info(conn: &SqlConnection) -> Result<SqlClient> {
+    if conn.auth_type == "windows" {
+        connect_windows_auth(&conn.server, &conn.database).await
+    } else {
+        let username = conn
+            .username
+            .as_deref()
+            .ok_or_else(|| anyhow!("Username mancante per connessione SQL"))?;
+        let password = conn
+            .password
+            .as_deref()
+            .ok_or_else(|| anyhow!("Password mancante per connessione SQL"))?;
+
+        connect_sql_auth(&conn.server, &conn.database, username, password).await
+    }
 }
 
 #[cfg(test)]
@@ -300,7 +327,11 @@ mod tests {
         ];
 
         for query in valid_queries {
-            assert!(validate_readonly_query(query).is_ok(), "Query dovrebbe essere valida: {}", query);
+            assert!(
+                validate_readonly_query(query).is_ok(),
+                "Query dovrebbe essere valida: {}",
+                query
+            );
         }
     }
 
@@ -319,16 +350,26 @@ mod tests {
         ];
 
         for query in invalid_queries {
-            assert!(validate_readonly_query(query).is_err(), "Query dovrebbe essere invalida: {}", query);
+            assert!(
+                validate_readonly_query(query).is_err(),
+                "Query dovrebbe essere invalida: {}",
+                query
+            );
         }
     }
 
     #[test]
     fn test_validate_query_with_comments() {
         let query = "SELECT * FROM Users -- UPDATE Users SET Name = 'hack'";
-        assert!(validate_readonly_query(query).is_ok(), "Commenti dovrebbero essere ignorati");
+        assert!(
+            validate_readonly_query(query).is_ok(),
+            "Commenti dovrebbero essere ignorati"
+        );
 
         let query2 = "SELECT * FROM Users /* UPDATE Users SET Name = 'hack' */";
-        assert!(validate_readonly_query(query2).is_ok(), "Commenti blocco dovrebbero essere ignorati");
+        assert!(
+            validate_readonly_query(query2).is_ok(),
+            "Commenti blocco dovrebbero essere ignorati"
+        );
     }
 }
