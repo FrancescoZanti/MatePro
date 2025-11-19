@@ -84,14 +84,23 @@ Oppure dopo la compilazione:
 - � **Visualizzazione documenti** locali
 
 #### Funzionalità Avanzate
-- �🔄 **Ciclo agentico autonomo** con iterazioni multiple
+- 🔄 **Ciclo agentico autonomo** con iterazioni multiple
 - 🧠 **Riconoscimento azioni complesse** (es. "mostrami il meteo")
 - 🛡️ **Sistema di sicurezza** con conferme per operazioni pericolose
 - 📝 **Log operazioni** visibili in tempo reale nella chat
 - 🎯 **Task multi-step** automatici
 
+#### Tool MCP SQL Server 🗄️ (NUOVO!)
+- 🔌 **Connessione SQL Server** con autenticazione Windows/SQL
+- 🔍 **Query READ-ONLY** su database gestionali
+- 📊 **Analisi dati** e generazione report
+- 🛡️ **Sicurezza garantita** - Solo SELECT, nessuna modifica dati
+- 💼 **Windows Domain Support** - Usa credenziali utente dominio
+- 🖥️ **UI Configurazione** - Interfaccia grafica per setup database
+
 **[📖 Documentazione Completa Modalità Agente](AGENT_FEATURES.md)**  
 **[🌐 Guida Tool Web e Browser](AGENT_WEB_TOOLS.md)**  
+**[🗄️ Guida MCP SQL Server](MCP_SQL_GUIDE.md)**  
 **[🧪 Esempi e Test Prompts](AGENT_TEST_PROMPTS.md)**
 
 ## Esempio d'uso

@@ -10,6 +10,7 @@ use lopdf::Document;
 use calamine::{Reader, open_workbook, Xlsx, Xls, Ods};
 
 mod agent;
+mod mcp_sql;
 use agent::{AgentSystem, ToolCall, ToolResult};
 
 // Helper per ottenere timestamp formattato
@@ -338,6 +339,15 @@ struct OllamaChatApp {
     awaiting_confirmation: Option<ToolCall>,
     max_agent_iterations: usize,
     current_agent_iteration: usize,
+    // Campi per configurazione SQL Server
+    show_sql_config: bool,
+    sql_server: String,
+    sql_database: String,
+    sql_auth_method: String, // "windows" o "sql"
+    sql_username: String,
+    sql_password: String,
+    sql_connection_status: Option<String>, // None, Some("connecting"), Some("connected"), Some("error: ...")
+    sql_test_promise: Option<Promise<Result<String>>>,
 }
 
 impl Default for OllamaChatApp {
@@ -367,6 +377,14 @@ impl Default for OllamaChatApp {
             awaiting_confirmation: None,
             max_agent_iterations: 5,
             current_agent_iteration: 0,
+            show_sql_config: false,
+            sql_server: "localhost".to_string(),
+            sql_database: String::new(),
+            sql_auth_method: "windows".to_string(),
+            sql_username: String::new(),
+            sql_password: String::new(),
+            sql_connection_status: None,
+            sql_test_promise: None,
         }
     }
 }
@@ -494,6 +512,55 @@ impl OllamaChatApp {
             hidden: false,
             timestamp: Some(get_timestamp()),
         });
+    }
+
+    fn test_sql_connection(&mut self) {
+        self.sql_connection_status = Some("connecting".to_string());
+        
+        let server = self.sql_server.clone();
+        let database = self.sql_database.clone();
+        let auth_method = self.sql_auth_method.clone();
+        let username = self.sql_username.clone();
+        let password = self.sql_password.clone();
+        
+        self.sql_test_promise = Some(Promise::spawn_thread("test_sql", move || {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async move {
+                    // Crea una connessione di test usando il modulo mcp_sql
+                    let connection_result = if auth_method == "windows" {
+                        mcp_sql::connect_windows_auth(&server, &database).await
+                    } else {
+                        mcp_sql::connect_sql_auth(&server, &database, &username, &password).await
+                    };
+                    
+                    match connection_result {
+                        Ok(client) => {
+                            // Genera un ID per la connessione
+                            let connection_id = format!("conn_{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+                            
+                            // Salva il client nel manager globale
+                            let mut clients = agent::SQL_CLIENTS.lock().await;
+                            clients.insert(connection_id.clone(), client);
+                            drop(clients);
+                            
+                            // Registra nel manager
+                            let conn_info = mcp_sql::SqlConnection {
+                                connection_id: connection_id.clone(),
+                                server: server.clone(),
+                                database: database.clone(),
+                                auth_type: auth_method.clone(),
+                            };
+                            
+                            let manager = agent::SQL_MANAGER.lock().await;
+                            manager.add_connection(conn_info);
+                            
+                            Ok(connection_id)
+                        }
+                        Err(e) => Err(e),
+                    }
+                })
+        }));
     }
 
     fn send_message(&mut self) {
@@ -994,6 +1061,23 @@ impl eframe::App for OllamaChatApp {
                                     );
                                 }
                                 
+                                ui.add_space(12.0);
+                                
+                                // Pulsante configurazione SQL Server
+                                let sql_btn_text = if self.sql_connection_status.as_ref().map(|s| s.as_str()) == Some("connected") {
+                                    egui::RichText::new("🗄️ SQL (✓)")
+                                        .color(egui::Color32::from_rgb(52, 199, 89))
+                                        .size(14.0)
+                                } else {
+                                    egui::RichText::new("🗄️ SQL")
+                                        .color(egui::Color32::from_rgb(142, 142, 147))
+                                        .size(14.0)
+                                };
+                                
+                                if ui.button(sql_btn_text).on_hover_text("Configura database SQL Server").clicked() {
+                                    self.show_sql_config = true;
+                                }
+                                
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     let disconnect_btn = egui::Button::new(
                                         egui::RichText::new("✕").size(20.0).strong()
@@ -1422,12 +1506,180 @@ impl eframe::App for OllamaChatApp {
             }
         }
 
+        // Finestra configurazione SQL Server
+        if self.show_sql_config {
+            let mut should_close = false;
+            let mut should_test = false;
+            
+            egui::Window::new("🗄️ Configurazione SQL Server")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_min_width(500.0);
+                    
+                    ui.vertical(|ui| {
+                        ui.add_space(10.0);
+                        
+                        // Server
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Server:").size(14.0).strong());
+                            ui.add_space(8.0);
+                            ui.text_edit_singleline(&mut self.sql_server);
+                        });
+                        ui.label(egui::RichText::new("  (es: localhost, 192.168.1.10, server.domain.com)").size(11.0).color(egui::Color32::GRAY));
+                        
+                        ui.add_space(8.0);
+                        
+                        // Database
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Database:").size(14.0).strong());
+                            ui.add_space(8.0);
+                            ui.text_edit_singleline(&mut self.sql_database);
+                        });
+                        
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.add_space(12.0);
+                        
+                        // Metodo autenticazione
+                        ui.label(egui::RichText::new("Autenticazione:").size(14.0).strong());
+                        ui.add_space(8.0);
+                        
+                        ui.horizontal(|ui| {
+                            ui.radio_value(&mut self.sql_auth_method, "windows".to_string(), 
+                                egui::RichText::new("🪟 Windows (Integrated)").size(13.0));
+                            ui.add_space(16.0);
+                            ui.radio_value(&mut self.sql_auth_method, "sql".to_string(), 
+                                egui::RichText::new("🔑 SQL Authentication").size(13.0));
+                        });
+                        
+                        if self.sql_auth_method == "windows" {
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("  ℹ️ Su Windows con dominio, verranno usate le credenziali dell'utente corrente.")
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(0, 122, 255)));
+                        }
+                        
+                        // Username e Password (solo per SQL Auth)
+                        if self.sql_auth_method == "sql" {
+                            ui.add_space(12.0);
+                            
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Username:").size(14.0));
+                                ui.add_space(8.0);
+                                ui.text_edit_singleline(&mut self.sql_username);
+                            });
+                            
+                            ui.add_space(8.0);
+                            
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Password:").size(14.0));
+                                ui.add_space(8.0);
+                                let password_edit = egui::TextEdit::singleline(&mut self.sql_password)
+                                    .password(true);
+                                ui.add(password_edit);
+                            });
+                        }
+                        
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.add_space(12.0);
+                        
+                        // Status connessione
+                        if let Some(status) = &self.sql_connection_status {
+                            let (icon, color) = if status == "connected" {
+                                ("✓", egui::Color32::from_rgb(52, 199, 89))
+                            } else if status == "connecting" {
+                                ("⟳", egui::Color32::from_rgb(0, 122, 255))
+                            } else if status.starts_with("error:") {
+                                ("✕", egui::Color32::from_rgb(255, 59, 48))
+                            } else {
+                                ("", egui::Color32::GRAY)
+                            };
+                            
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(icon).size(16.0).color(color));
+                                ui.label(egui::RichText::new(status).size(13.0).color(color));
+                            });
+                            
+                            ui.add_space(12.0);
+                        }
+                        
+                        // Nota read-only
+                        egui::Frame::none()
+                            .fill(egui::Color32::from_rgb(255, 249, 196))
+                            .rounding(egui::Rounding::same(6.0))
+                            .inner_margin(egui::Margin::same(10.0))
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new("🔒 SOLO LETTURA: Le query sono limitate a SELECT. UPDATE, INSERT, DELETE non sono permesse.")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(138, 109, 0)));
+                            });
+                        
+                        ui.add_space(16.0);
+                        
+                        // Pulsanti
+                        ui.horizontal(|ui| {
+                            let test_btn = egui::Button::new(
+                                egui::RichText::new("🔌 Test Connessione").size(14.0).color(egui::Color32::WHITE)
+                            )
+                            .fill(egui::Color32::from_rgb(0, 122, 255))
+                            .min_size(egui::vec2(160.0, 36.0));
+                            
+                            if ui.add(test_btn).clicked() && self.sql_test_promise.is_none() {
+                                should_test = true;
+                            }
+                            
+                            ui.add_space(8.0);
+                            
+                            let close_btn = egui::Button::new(
+                                egui::RichText::new("Chiudi").size(14.0)
+                            )
+                            .min_size(egui::vec2(100.0, 36.0));
+                            
+                            if ui.add(close_btn).clicked() {
+                                should_close = true;
+                            }
+                        });
+                        
+                        ui.add_space(10.0);
+                    });
+                });
+            
+            if should_close {
+                self.show_sql_config = false;
+            }
+            
+            if should_test {
+                self.test_sql_connection();
+            }
+        }
+        
+        // Controlla promise test connessione SQL
+        if let Some(promise) = &self.sql_test_promise {
+            if let Some(result) = promise.ready() {
+                match result {
+                    Ok(connection_id) => {
+                        self.sql_connection_status = Some("connected".to_string());
+                        // Mostra anche l'ID connessione nel log (opzionale)
+                        println!("✅ Connessione SQL stabilita: {}", connection_id);
+                    }
+                    Err(e) => {
+                        self.sql_connection_status = Some(format!("error: {}", e));
+                    }
+                }
+                self.sql_test_promise = None;
+            }
+        }
+
         // Richiedi un nuovo frame se ci sono promise in corso
         if self.scanning_promise.is_some() 
             || self.loading_models_promise.is_some() 
             || self.chat_promise.is_some()
             || self.file_loading_promise.is_some()
-            || self.tool_execution_promise.is_some() {
+            || self.tool_execution_promise.is_some()
+            || self.sql_test_promise.is_some() {
             ctx.request_repaint();
         }
     }

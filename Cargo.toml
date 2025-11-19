@@ -1,6 +1,6 @@
 [package]
 name = "matepro"
-version = "0.0.2-beta"
+version = "0.0.3-alpha"
 edition = "2021"
 authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
 description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"
@@ -31,6 +31,12 @@ sysinfo = "0.30"  # Informazioni sistema e processi
 webbrowser = "1.0"  # Apertura browser
 url = "2.5"  # Parsing e validazione URL
 urlencoding = "2.1"  # Encoding URL per query
+# MCP SQL Server support
+tiberius = { version = "0.12", features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal"] }  # SQL Server driver nativo
+tokio-util = { version = "0.7", features = ["compat"] }  # Compatibility layer per async I/O
+uuid = { version = "1.0", features = ["v4"] }  # UUID per connection IDs
+lazy_static = "1.4"  # Static globals thread-safe
+futures-util = "0.3"  # Async stream utilities
 
 [package.metadata.deb]
 maintainer = "Francesco Zanti <me@francescozanti.dev>"

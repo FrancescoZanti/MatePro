@@ -1,6 +1,6 @@
 # Changelog - MatePro
 
-## [Unreleased] - Funzionalità Agentiche
+## [0.0.3-alpha] - Funzionalità Agentiche e SQL Server (2025)
 
 ### 🎉 Novità Principali
 
@@ -24,6 +24,21 @@
 9. **map_open** - Apre Google Maps per località o indicazioni
 10. **youtube_search** - Cerca video su YouTube
 11. **document_view** - Apre file locali con programma predefinito
+
+#### Tool MCP SQL Server (5) 🆕🗄️
+12. **sql_connect** - Connessione SQL Server (Windows/SQL Auth)
+13. **sql_query** - Esecuzione query SELECT (read-only)
+14. **sql_list_tables** - Lista tabelle e view database
+15. **sql_describe_table** - Struttura tabella (colonne, tipi)
+16. **sql_disconnect** - Chiusura connessione SQL
+
+**Features MCP SQL:**
+- ✅ Autenticazione Windows (Integrated Security) su PC a dominio
+- ✅ Autenticazione SQL con username/password
+- ✅ Validazione query READ-ONLY (solo SELECT)
+- ✅ UI configurazione database con test connessione
+- ✅ Support cross-platform (Windows full, Linux/macOS SQL Auth only)
+- ⚠️ Sicurezza: UPDATE/INSERT/DELETE automaticamente bloccati
 
 #### Sicurezza
 - Sistema di **conferme esplicite** per operazioni pericolose
@@ -51,12 +66,18 @@
 - **Nuovo:** `webbrowser` 1.0 - Apertura browser cross-platform
 - **Nuovo:** `url` 2.5 - Parsing e validazione URL
 - **Nuovo:** `urlencoding` 2.1 - Encoding parametri query
+- **Nuovo:** `tiberius` 0.12.3 - Driver nativo SQL Server per Rust
+- **Nuovo:** `tokio-util` 0.7 - Utilità async (compat layer)
+- **Nuovo:** `lazy_static` 1.4 - Gestione stato globale connessioni
+- **Nuovo:** `uuid` 1.0 - Generazione ID connessioni (feature v4)
 
 ### 📝 Documentazione
 - `AGENT_FEATURES.md` - Documentazione completa funzionalità agentiche
 - `AGENT_TEST_PROMPTS.md` - Esempi e test per modalità agente (21 scenari)
 - **Nuovo:** `AGENT_WEB_TOOLS.md` - Guida completa tool web (400+ righe)
 - **Nuovo:** `AGENT_WEB_TEST_PROMPTS.md` - 35 test prompts per tool web
+- **Nuovo:** `MCP_SQL_GUIDE.md` - Guida completa SQL Server (600+ righe)
+- **Nuovo:** `MCP_SQL_TEST_PROMPTS.md` - 33 test prompts SQL (8 categorie)
 - README aggiornato con sezione dedicata
 
 ### 🔧 Miglioramenti Tecnici
@@ -67,6 +88,11 @@
 - **Nuovo:** Validazione URL con schema HTTP/HTTPS
 - **Nuovo:** Encoding sicuro query parametri
 - **Nuovo:** Supporto apertura file locali con programma predefinito
+- **Nuovo:** Modulo `mcp_sql.rs` (335 righe) per gestione SQL Server
+- **Nuovo:** Gestione connessioni globali con lazy_static Arc<Mutex<HashMap>>
+- **Nuovo:** Validazione query read-only con regex (blocca 14+ operazioni write)
+- **Nuovo:** Supporto asincrono SQL con tokio-util compat layer
+- **Nuovo:** UI Promise per test connessione SQL non-bloccante
 - UI reattiva durante esecuzione tool
 
 ### 🐛 Bug Fix

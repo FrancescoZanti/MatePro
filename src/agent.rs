@@ -277,6 +277,140 @@ impl AgentSystem {
             },
         );
 
+        // ========== TOOL MCP SQL SERVER ==========
+        
+        // Tool: SqlConnect
+        tools.insert(
+            "sql_connect".to_string(),
+            ToolDefinition {
+                name: "sql_connect".to_string(),
+                description: "Connette a un database SQL Server. USALO per stabilire connessione prima di query. Supporta autenticazione Windows (dominio) e SQL.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "server".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Nome o IP del server SQL (es: localhost, 192.168.1.10, server.domain.com)".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "database".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Nome del database a cui connettersi".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "auth_method".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Metodo autenticazione: 'windows' (usa credenziali dominio/PC) o 'sql' (username/password)".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "username".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Username SQL (solo se auth_method='sql')".to_string(),
+                        required: false,
+                    },
+                    ToolParameter {
+                        name: "password".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Password SQL (solo se auth_method='sql')".to_string(),
+                        required: false,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        // Tool: SqlQuery
+        tools.insert(
+            "sql_query".to_string(),
+            ToolDefinition {
+                name: "sql_query".to_string(),
+                description: "Esegue query SELECT su database SQL Server connesso. SOLO LETTURA - UPDATE/INSERT/DELETE non permessi. Ritorna risultati in JSON.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "connection_id".to_string(),
+                        param_type: "string".to_string(),
+                        description: "ID della connessione SQL (ottenuto da sql_connect)".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "query".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Query SQL SELECT da eseguire (solo lettura)".to_string(),
+                        required: true,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        // Tool: SqlListTables
+        tools.insert(
+            "sql_list_tables".to_string(),
+            ToolDefinition {
+                name: "sql_list_tables".to_string(),
+                description: "Lista tutte le tabelle e view del database SQL Server. USALO per esplorare struttura database.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "connection_id".to_string(),
+                        param_type: "string".to_string(),
+                        description: "ID della connessione SQL".to_string(),
+                        required: true,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        // Tool: SqlDescribeTable
+        tools.insert(
+            "sql_describe_table".to_string(),
+            ToolDefinition {
+                name: "sql_describe_table".to_string(),
+                description: "Mostra struttura di una tabella (colonne, tipi, nullable). USALO per capire schema prima di query.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "connection_id".to_string(),
+                        param_type: "string".to_string(),
+                        description: "ID della connessione SQL".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "schema".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Schema della tabella (es: dbo)".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "table".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Nome della tabella".to_string(),
+                        required: true,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        // Tool: SqlDisconnect
+        tools.insert(
+            "sql_disconnect".to_string(),
+            ToolDefinition {
+                name: "sql_disconnect".to_string(),
+                description: "Chiude connessione SQL Server. USALO quando hai finito le query per liberare risorse.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "connection_id".to_string(),
+                        param_type: "string".to_string(),
+                        description: "ID della connessione SQL da chiudere".to_string(),
+                        required: true,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
         Self {
             tools,
             execution_log: Vec::new(),
@@ -383,6 +517,12 @@ impl AgentSystem {
             "map_open" => self.execute_map_open(&call.parameters).await,
             "youtube_search" => self.execute_youtube_search(&call.parameters).await,
             "document_view" => self.execute_document_view(&call.parameters).await,
+            // MCP SQL Server tools
+            "sql_connect" => self.execute_sql_connect(&call.parameters).await,
+            "sql_query" => self.execute_sql_query(&call.parameters).await,
+            "sql_list_tables" => self.execute_sql_list_tables(&call.parameters).await,
+            "sql_describe_table" => self.execute_sql_describe_table(&call.parameters).await,
+            "sql_disconnect" => self.execute_sql_disconnect(&call.parameters).await,
             _ => Err(anyhow::anyhow!("Tool non implementato: {}", call.tool_name)),
         };
 
@@ -678,5 +818,160 @@ Questo comando lista tutti i file.
         let calls = agent.parse_tool_calls(response);
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].tool_name, "shell_execute");
+    }
+}
+
+// ============ IMPLEMENTAZIONI TOOL MCP SQL SERVER ============
+
+use crate::mcp_sql;
+
+// Gestore globale connessioni SQL (statico thread-safe)
+lazy_static::lazy_static! {
+    pub static ref SQL_MANAGER: std::sync::Arc<tokio::sync::Mutex<mcp_sql::SqlConnectionManager>> = 
+        std::sync::Arc::new(tokio::sync::Mutex::new(mcp_sql::SqlConnectionManager::new()));
+    
+    // Storage per i client SQL attivi
+    pub static ref SQL_CLIENTS: std::sync::Arc<tokio::sync::Mutex<HashMap<String, mcp_sql::SqlClient>>> = 
+        std::sync::Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+}
+
+impl AgentSystem {
+    /// Connette a SQL Server e memorizza la connessione
+    async fn execute_sql_connect(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let server = params.get("server")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'server' mancante"))?;
+        
+        let database = params.get("database")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'database' mancante"))?;
+        
+        let auth_method = params.get("auth_method")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'auth_method' mancante (usa 'windows' o 'sql')"))?;
+        
+        // Genera ID connessione unico
+        let connection_id = format!("sql_{}", uuid::Uuid::new_v4().to_string());
+        
+        // Connetti in base al metodo di autenticazione
+        let client = if auth_method == "windows" {
+            mcp_sql::connect_windows_auth(server, database).await?
+        } else if auth_method == "sql" {
+            let username = params.get("username")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Parametro 'username' richiesto per SQL auth"))?;
+            
+            let password = params.get("password")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Parametro 'password' richiesto per SQL auth"))?;
+            
+            mcp_sql::connect_sql_auth(server, database, username, password).await?
+        } else {
+            return Err(anyhow::anyhow!("auth_method non valido: usa 'windows' o 'sql'"));
+        };
+        
+        // Memorizza client e info connessione
+        let mut clients = SQL_CLIENTS.lock().await;
+        clients.insert(connection_id.clone(), client);
+        
+        let conn_info = mcp_sql::SqlConnection {
+            connection_id: connection_id.clone(),
+            server: server.to_string(),
+            database: database.to_string(),
+            auth_type: auth_method.to_string(),
+        };
+        
+        let manager = SQL_MANAGER.lock().await;
+        manager.add_connection(conn_info);
+        
+        Ok(format!(
+            "✅ Connesso a SQL Server!\n\
+            Connection ID: {}\n\
+            Server: {}\n\
+            Database: {}\n\
+            Autenticazione: {}\n\n\
+            Usa questo connection_id per le query successive.",
+            connection_id, server, database, auth_method
+        ))
+    }
+    
+    /// Esegue query SQL SELECT
+    async fn execute_sql_query(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let connection_id = params.get("connection_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'connection_id' mancante"))?;
+        
+        let query = params.get("query")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'query' mancante"))?;
+        
+        // Ottieni client
+        let mut clients = SQL_CLIENTS.lock().await;
+        let client = clients.get_mut(connection_id)
+            .ok_or_else(|| anyhow::anyhow!("Connessione '{}' non trovata. Usa sql_connect prima.", connection_id))?;
+        
+        // Esegui query (con validazione read-only integrata)
+        let result = mcp_sql::execute_query(client, query).await?;
+        
+        Ok(format!("📊 Risultati query:\n```json\n{}\n```", result))
+    }
+    
+    /// Lista tutte le tabelle del database
+    async fn execute_sql_list_tables(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let connection_id = params.get("connection_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'connection_id' mancante"))?;
+        
+        let mut clients = SQL_CLIENTS.lock().await;
+        let client = clients.get_mut(connection_id)
+            .ok_or_else(|| anyhow::anyhow!("Connessione '{}' non trovata", connection_id))?;
+        
+        let result = mcp_sql::list_tables(client).await?;
+        
+        Ok(format!("📋 Tabelle del database:\n```json\n{}\n```", result))
+    }
+    
+    /// Descrive struttura di una tabella
+    async fn execute_sql_describe_table(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let connection_id = params.get("connection_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'connection_id' mancante"))?;
+        
+        let schema = params.get("schema")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'schema' mancante (es: 'dbo')"))?;
+        
+        let table = params.get("table")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'table' mancante"))?;
+        
+        let mut clients = SQL_CLIENTS.lock().await;
+        let client = clients.get_mut(connection_id)
+            .ok_or_else(|| anyhow::anyhow!("Connessione '{}' non trovata", connection_id))?;
+        
+        let result = mcp_sql::describe_table(client, schema, table).await?;
+        
+        Ok(format!("🔍 Struttura tabella {}.{}:\n```json\n{}\n```", schema, table, result))
+    }
+    
+    /// Chiude connessione SQL
+    async fn execute_sql_disconnect(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+        let connection_id = params.get("connection_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Parametro 'connection_id' mancante"))?;
+        
+        // Rimuovi client
+        let mut clients = SQL_CLIENTS.lock().await;
+        let removed = clients.remove(connection_id);
+        
+        if removed.is_none() {
+            return Err(anyhow::anyhow!("Connessione '{}' non trovata", connection_id));
+        }
+        
+        // Rimuovi info dal manager
+        let manager = SQL_MANAGER.lock().await;
+        manager.remove_connection(connection_id);
+        
+        Ok(format!("✅ Connessione '{}' chiusa correttamente.", connection_id))
     }
 }
