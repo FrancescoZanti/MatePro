@@ -3,14 +3,33 @@
 // IMPORTANTE: Solo operazioni READ-ONLY (SELECT)
 
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose, Engine as _};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tiberius::{AuthMethod, Client, Config, Query};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
+use serde_json::{json, Number, Value};
+use tiberius::{Row, ColumnType};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 // Type alias per semplificare le signature
 pub type SqlClient = Client<Compat<TcpStream>>;
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SqlColumnInfo {
+    pub name: String,
+    pub data_type: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct QueryResult {
+    pub columns: Vec<SqlColumnInfo>,
+    pub rows: Vec<HashMap<String, Value>>,
+}
 
 /// Rappresenta una connessione SQL Server attiva
 #[derive(Clone)]
@@ -147,6 +166,123 @@ fn remove_block_comments(sql: &str) -> String {
     result
 }
 
+fn column_type_label(column_type: ColumnType) -> &'static str {
+    match column_type {
+        ColumnType::Null => "null",
+        ColumnType::Bit | ColumnType::Bitn => "bit",
+        ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 | ColumnType::Intn => "int",
+        ColumnType::Float4 | ColumnType::Float8 | ColumnType::Floatn => "float",
+        ColumnType::Decimaln | ColumnType::Numericn => "decimal",
+        ColumnType::Money | ColumnType::Money4 => "money",
+        ColumnType::Datetime | ColumnType::Datetime4 => "datetime",
+        ColumnType::Datetimen => "datetimen",
+        ColumnType::Guid => "guid",
+        ColumnType::BigVarBin | ColumnType::BigBinary => "varbinary",
+        ColumnType::BigVarChar | ColumnType::BigChar => "varchar",
+        ColumnType::NVarchar | ColumnType::NChar => "nvarchar",
+        ColumnType::Xml => "xml",
+        ColumnType::Text | ColumnType::NText => "text",
+        ColumnType::Image => "image",
+        ColumnType::Udt => "udt",
+        ColumnType::SSVariant => "sql_variant",
+    }
+}
+
+fn try_number_from_decimal(decimal: Decimal) -> Option<Number> {
+    decimal.to_f64().and_then(Number::from_f64)
+}
+
+fn bool_value(row: &Row, idx: usize) -> Result<Option<Value>> {
+    Ok(row.try_get::<bool, _>(idx)?.map(Value::Bool))
+}
+
+fn int_value(row: &Row, idx: usize) -> Result<Option<Value>> {
+    Ok(row
+        .try_get::<i64, _>(idx)?
+        .map(|v| Value::Number(Number::from(v))))
+}
+
+fn float_value(row: &Row, idx: usize) -> Result<Option<Value>> {
+    Ok(row
+        .try_get::<f64, _>(idx)?
+        .and_then(Number::from_f64)
+        .map(Value::Number))
+}
+
+fn decimal_value(row: &Row, idx: usize) -> Result<Option<Value>> {
+    Ok(row.try_get::<Decimal, _>(idx)?.map(|decimal| {
+        try_number_from_decimal(decimal)
+            .map(Value::Number)
+            .unwrap_or_else(|| Value::String(decimal.to_string()))
+    }))
+}
+
+fn string_value(row: &Row, idx: usize) -> Result<Option<Value>> {
+    Ok(row
+        .try_get::<String, _>(idx)?
+        .map(Value::String))
+}
+
+fn binary_value(row: &Row, idx: usize) -> Result<Option<Value>> {
+    Ok(row
+        .try_get::<Vec<u8>, _>(idx)?
+        .map(|bytes| Value::String(general_purpose::STANDARD.encode(bytes))))
+}
+
+fn datetime_value(row: &Row, idx: usize) -> Result<Option<Value>> {
+    if let Some(dt) = row.try_get::<NaiveDateTime, _>(idx)? {
+        return Ok(Some(Value::String(dt.to_string())));
+    }
+
+    if let Some(dt) = row.try_get::<NaiveDate, _>(idx)? {
+        return Ok(Some(Value::String(dt.to_string())));
+    }
+
+    if let Some(dt) = row.try_get::<NaiveTime, _>(idx)? {
+        return Ok(Some(Value::String(dt.to_string())));
+    }
+
+    if let Some(dt) = row.try_get::<DateTime<FixedOffset>, _>(idx)? {
+        return Ok(Some(Value::String(dt.to_rfc3339())));
+    }
+
+    Ok(None)
+}
+
+fn column_value_to_json(row: &Row, idx: usize, column_type: ColumnType) -> Result<Value> {
+    let value = match column_type {
+        ColumnType::Null => Value::Null,
+        ColumnType::Bit | ColumnType::Bitn => bool_value(row, idx)?.unwrap_or(Value::Null),
+        ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 | ColumnType::Intn => {
+            int_value(row, idx)?.unwrap_or(Value::Null)
+        }
+        ColumnType::Float4 | ColumnType::Float8 | ColumnType::Floatn => {
+            float_value(row, idx)?.unwrap_or(Value::Null)
+        }
+        ColumnType::Decimaln | ColumnType::Numericn | ColumnType::Money | ColumnType::Money4 => {
+            decimal_value(row, idx)?.unwrap_or(Value::Null)
+        }
+        ColumnType::Datetime | ColumnType::Datetime4 | ColumnType::Datetimen => {
+            datetime_value(row, idx)?.unwrap_or(Value::Null)
+        }
+        ColumnType::Guid => string_value(row, idx)?.unwrap_or(Value::Null),
+        ColumnType::BigVarBin | ColumnType::BigBinary | ColumnType::Image => {
+            binary_value(row, idx)?.unwrap_or(Value::Null)
+        }
+        ColumnType::BigVarChar
+        | ColumnType::BigChar
+        | ColumnType::NVarchar
+        | ColumnType::NChar
+        | ColumnType::Xml
+        | ColumnType::Text
+        | ColumnType::NText
+        | ColumnType::Udt
+        | ColumnType::SSVariant => string_value(row, idx)?.unwrap_or(Value::Null),
+    };
+
+    Ok(value)
+}
+
 /// Connette a SQL Server con autenticazione Windows (dominio)
 /// NOTA: Autenticazione Windows richiede funzionalità specifiche del sistema operativo
 /// Su Linux potrebbe richiedere configurazione Kerberos
@@ -200,40 +336,45 @@ pub async fn connect_sql_auth(
 }
 
 /// Esegue una query SELECT e ritorna risultati come JSON
-pub async fn execute_query(client: &mut SqlClient, query: &str) -> Result<String> {
+pub async fn run_query(client: &mut SqlClient, query: &str) -> Result<QueryResult> {
     // Valida che sia read-only
     validate_readonly_query(query)?;
 
     // Esegue la query
-    let stream = Query::new(query).query(client).await?;
+    let mut stream = Query::new(query).query(client).await?;
+
+    // Copia schema per avere info colonne anche se la query non restituisce righe
+    let schema = stream.schema().clone();
 
     // Raccogli tutti i risultati
     let rows = stream.into_first_result().await?;
 
-    // Costruisci JSON semplificato
-    let mut result_rows = Vec::new();
+    let column_info: Vec<SqlColumnInfo> = schema
+        .iter()
+        .map(|column| SqlColumnInfo {
+            name: column.name().to_string(),
+            data_type: column_type_label(column.column_type()).to_string(),
+        })
+        .collect();
+
+    let mut data_rows = Vec::new();
     for row in rows {
-        // Per ora convertiamo tutto in stringhe
-        // In produzione gestiresti i tipi specifici
-        let mut row_data = Vec::new();
-        for col in row.columns() {
-            row_data.push(col.name().to_string());
+        let mut row_map = HashMap::new();
+        for (idx, column) in schema.iter().enumerate() {
+            let value = column_value_to_json(&row, idx, column.column_type())?;
+            row_map.insert(column.name().to_string(), value);
         }
-        result_rows.push(format!("{:?}", row));
+        data_rows.push(row_map);
     }
 
-    let result = serde_json::json!({
-        "success": true,
-        "row_count": result_rows.len(),
-        "rows": result_rows,
-        "message": "Query eseguita con successo"
-    });
-
-    Ok(serde_json::to_string_pretty(&result)?)
+    Ok(QueryResult {
+        columns: column_info,
+        rows: data_rows,
+    })
 }
 
 /// Lista tutte le tabelle del database
-pub async fn list_tables(client: &mut SqlClient) -> Result<String> {
+pub async fn list_tables(client: &mut SqlClient) -> Result<QueryResult> {
     let query = r#"
         SELECT 
             TABLE_SCHEMA as [Schema],
@@ -244,7 +385,7 @@ pub async fn list_tables(client: &mut SqlClient) -> Result<String> {
         ORDER BY TABLE_SCHEMA, TABLE_NAME
     "#;
 
-    execute_query(client, query).await
+    run_query(client, query).await
 }
 
 /// Descrive struttura di una tabella (colonne, tipi, nullable)
@@ -252,7 +393,7 @@ pub async fn describe_table(
     client: &mut SqlClient,
     schema: &str,
     table_name: &str,
-) -> Result<String> {
+) -> Result<QueryResult> {
     let query = format!(
         r#"
         SELECT 
@@ -270,7 +411,7 @@ pub async fn describe_table(
         table_name.replace("'", "''")
     );
 
-    execute_query(client, &query).await
+    run_query(client, &query).await
 }
 
 /// Testa la connessione al database
@@ -292,7 +433,14 @@ pub async fn test_connection(
 
     // Query semplice per testare
     let test_query = "SELECT @@VERSION as SqlVersion, DB_NAME() as CurrentDatabase";
-    execute_query(&mut client, test_query).await
+    let result = run_query(&mut client, test_query).await?;
+    let payload = serde_json::json!({
+        "success": true,
+        "message": "Connessione riuscita",
+        "columns": result.columns,
+        "rows": result.rows,
+    });
+    Ok(serde_json::to_string_pretty(&payload)?)
 }
 
 /// Crea un client SQL a partire dalle informazioni memorizzate per una connessione

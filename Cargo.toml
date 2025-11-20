@@ -31,6 +31,7 @@ sysinfo = "0.30"  # Informazioni sistema e processi
 webbrowser = "1.0"  # Apertura browser
 url = "2.5"  # Parsing e validazione URL
 urlencoding = "2.1"  # Encoding URL per query
+plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "ttf"] }  # Generazione grafici PNG
 # MCP SQL Server support
 tiberius = { version = "0.12", features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "winauth"] }  # SQL Server driver nativo
 tokio-util = { version = "0.7", features = ["compat"] }  # Compatibility layer per async I/O
