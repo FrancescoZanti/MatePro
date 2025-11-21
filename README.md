@@ -13,6 +13,7 @@ Client Ollama moderno con interfaccia grafica elegante per chattare con modelli 
 <details>
 <summary>Vedi altre immagini</summary>
 
+
 ### Selezione Server
 ![Server Selection](.github/images/server-selection.png)
 
