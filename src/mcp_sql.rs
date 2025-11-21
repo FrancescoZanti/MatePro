@@ -4,15 +4,15 @@
 
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use serde::Serialize;
+use serde_json::{Number, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tiberius::{AuthMethod, Client, Config, Query};
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
-use serde_json::{json, Number, Value};
-use tiberius::{Row, ColumnType};
+use tiberius::{ColumnType, Row};
 use tokio::net::TcpStream;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
@@ -170,12 +170,20 @@ fn column_type_label(column_type: ColumnType) -> &'static str {
     match column_type {
         ColumnType::Null => "null",
         ColumnType::Bit | ColumnType::Bitn => "bit",
-        ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 | ColumnType::Intn => "int",
+        ColumnType::Int1
+        | ColumnType::Int2
+        | ColumnType::Int4
+        | ColumnType::Int8
+        | ColumnType::Intn => "int",
         ColumnType::Float4 | ColumnType::Float8 | ColumnType::Floatn => "float",
         ColumnType::Decimaln | ColumnType::Numericn => "decimal",
         ColumnType::Money | ColumnType::Money4 => "money",
         ColumnType::Datetime | ColumnType::Datetime4 => "datetime",
         ColumnType::Datetimen => "datetimen",
+        ColumnType::Daten => "date",
+        ColumnType::Timen => "time",
+        ColumnType::Datetime2 => "datetime2",
+        ColumnType::DatetimeOffsetn => "datetimeoffset",
         ColumnType::Guid => "guid",
         ColumnType::BigVarBin | ColumnType::BigBinary => "varbinary",
         ColumnType::BigVarChar | ColumnType::BigChar => "varchar",
@@ -219,13 +227,13 @@ fn decimal_value(row: &Row, idx: usize) -> Result<Option<Value>> {
 
 fn string_value(row: &Row, idx: usize) -> Result<Option<Value>> {
     Ok(row
-        .try_get::<String, _>(idx)?
-        .map(Value::String))
+        .try_get::<&str, _>(idx)?
+        .map(|text| Value::String(text.to_string())))
 }
 
 fn binary_value(row: &Row, idx: usize) -> Result<Option<Value>> {
     Ok(row
-        .try_get::<Vec<u8>, _>(idx)?
+        .try_get::<&[u8], _>(idx)?
         .map(|bytes| Value::String(general_purpose::STANDARD.encode(bytes))))
 }
 
@@ -253,18 +261,24 @@ fn column_value_to_json(row: &Row, idx: usize, column_type: ColumnType) -> Resul
     let value = match column_type {
         ColumnType::Null => Value::Null,
         ColumnType::Bit | ColumnType::Bitn => bool_value(row, idx)?.unwrap_or(Value::Null),
-        ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 | ColumnType::Intn => {
-            int_value(row, idx)?.unwrap_or(Value::Null)
-        }
+        ColumnType::Int1
+        | ColumnType::Int2
+        | ColumnType::Int4
+        | ColumnType::Int8
+        | ColumnType::Intn => int_value(row, idx)?.unwrap_or(Value::Null),
         ColumnType::Float4 | ColumnType::Float8 | ColumnType::Floatn => {
             float_value(row, idx)?.unwrap_or(Value::Null)
         }
         ColumnType::Decimaln | ColumnType::Numericn | ColumnType::Money | ColumnType::Money4 => {
             decimal_value(row, idx)?.unwrap_or(Value::Null)
         }
-        ColumnType::Datetime | ColumnType::Datetime4 | ColumnType::Datetimen => {
-            datetime_value(row, idx)?.unwrap_or(Value::Null)
-        }
+        ColumnType::Datetime
+        | ColumnType::Datetime4
+        | ColumnType::Datetimen
+        | ColumnType::Daten
+        | ColumnType::Timen
+        | ColumnType::Datetime2
+        | ColumnType::DatetimeOffsetn => datetime_value(row, idx)?.unwrap_or(Value::Null),
         ColumnType::Guid => string_value(row, idx)?.unwrap_or(Value::Null),
         ColumnType::BigVarBin | ColumnType::BigBinary | ColumnType::Image => {
             binary_value(row, idx)?.unwrap_or(Value::Null)
@@ -343,8 +357,12 @@ pub async fn run_query(client: &mut SqlClient, query: &str) -> Result<QueryResul
     // Esegue la query
     let mut stream = Query::new(query).query(client).await?;
 
-    // Copia schema per avere info colonne anche se la query non restituisce righe
-    let schema = stream.schema().clone();
+    // Recupera metadati colonne prima di consumare i risultati
+    let schema: Vec<tiberius::Column> = stream
+        .columns()
+        .await?
+        .map(|columns| columns.to_vec())
+        .unwrap_or_default();
 
     // Raccogli tutti i risultati
     let rows = stream.into_first_result().await?;

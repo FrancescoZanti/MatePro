@@ -31,7 +31,10 @@ sysinfo = "0.30"  # Informazioni sistema e processi
 webbrowser = "1.0"  # Apertura browser
 url = "2.5"  # Parsing e validazione URL
 urlencoding = "2.1"  # Encoding URL per query
-plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "ttf"] }  # Generazione grafici PNG
+base64 = "0.22"  # Encoding/decoding Base64 per grafici
+chrono = { version = "0.4", features = ["serde"] }  # Gestione date/ore per risultati SQL
+rust_decimal = { version = "1", features = ["serde"] }  # Supporto numeri decimali per SQL
+plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "ttf", "image", "line_series"] }  # Generazione grafici PNG
 # MCP SQL Server support
 tiberius = { version = "0.12", features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "winauth"] }  # SQL Server driver nativo
 tokio-util = { version = "0.7", features = ["compat"] }  # Compatibility layer per async I/O

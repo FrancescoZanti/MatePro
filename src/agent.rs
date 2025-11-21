@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use plotters::chart::SeriesLabelPosition;
 use plotters::prelude::*;
+use plotters::series::LineSeries;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -89,345 +90,9 @@ impl AgentSystem {
                     description: "Il comando bash da eseguire".to_string(),
                     required: true,
                 }],
-
-                fn summarize_query_result(result: &mcp_sql::QueryResult) -> String {
-                    let total_rows = result.rows.len();
-                    let total_columns = result.columns.len();
-
-                    let column_highlights: Vec<String> = result
-                        .columns
-                        .iter()
-                        .take(3)
-                        .map(|column| summarize_column(result, column))
-                        .collect();
-
-                    let highlight_text = if column_highlights.is_empty() {
-                        "nessun dato disponibile".to_string()
-                    } else {
-                        column_highlights.join("; ")
-                    };
-
-                    format!(
-                        "- righe: {}\n- colonne: {}\n- colonne principali: {}\n",
-                        total_rows, total_columns, highlight_text
-                    )
-                }
-
-                fn summarize_column(result: &mcp_sql::QueryResult, column: &mcp_sql::SqlColumnInfo) -> String {
-                    if is_numeric_type(&column.data_type) {
-                        let mut numeric_values = Vec::new();
-                        for row in &result.rows {
-                            if let Some(value) = row.get(&column.name) {
-                                if let Some(number) = value_to_f64(value) {
-                                    numeric_values.push(number);
-                                }
-                            }
-                        }
-
-                        if !numeric_values.is_empty() {
-                            let count = numeric_values.len();
-                            let (min, max, mean) = compute_basic_stats(&numeric_values);
-                            return format!(
-                                "{} {}: {} valori, min {:.3}, max {:.3}, media {:.3}",
-                                column.name, column.data_type, count, min, max, mean
-                            );
-                        }
-                    }
-
-                    if column.data_type == "bit" {
-                        let mut true_count = 0usize;
-                        let mut false_count = 0usize;
-                        for row in &result.rows {
-                            if let Some(value) = row.get(&column.name) {
-                                if let Some(flag) = value.as_bool() {
-                                    if flag {
-                                        true_count += 1;
-                                    } else {
-                                        false_count += 1;
-                                    }
-                                }
-                            }
-                        }
-                        if true_count + false_count > 0 {
-                            return format!(
-                                "{} bit: {} veri, {} falsi",
-                                column.name, true_count, false_count
-                            );
-                        }
-                    }
-
-                    let mut samples = Vec::new();
-                    for row in &result.rows {
-                        if let Some(value) = row.get(&column.name) {
-                            if value.is_null() {
-                                continue;
-                            }
-                            let display = value_to_display(value);
-                            if display.is_empty() {
-                                continue;
-                            }
-                            if !samples.contains(&display) {
-                                samples.push(display);
-                            }
-                            if samples.len() == 3 {
-                                break;
-                            }
-                        }
-                    }
-
-                    if samples.is_empty() {
-                        format!("{} {}: solo valori null", column.name, column.data_type)
-                    } else {
-                        format!(
-                            "{} {}: esempi {}",
-                            column.name,
-                            column.data_type,
-                            samples.join(", ")
-                        )
-                    }
-                }
-
-                fn render_result_table(result: &mcp_sql::QueryResult, max_rows: usize) -> Option<String> {
-                    if result.columns.is_empty() {
-                        return None;
-                    }
-
-                    let headers: Vec<String> = result.columns.iter().map(|column| column.name.clone()).collect();
-                    let mut table = String::new();
-                    table.push_str("| ");
-                    table.push_str(&headers.join(" | "));
-                    table.push_str(" |");
-                    table.push_str("\n| ");
-                    table.push_str(&headers.iter().map(|_| "---").collect::<Vec<_>>().join(" | "));
-                    table.push_str(" |");
-                    table.push('
                 dangerous: true,
-
-                    for row in result.rows.iter().take(max_rows) {
-                        table.push_str("| ");
-                        let mut cells = Vec::new();
-                        for column in &result.columns {
-                            let value = row.get(&column.name).unwrap_or(&serde_json::Value::Null);
-                            let display = escape_markdown_cell(&value_to_display(value));
-                            cells.push(display);
-                        }
-                        table.push_str(&cells.join(" | "));
-                        table.push_str(" |");
-                        table.push('
             },
-                    }
-
-                    if result.rows.len() > max_rows {
-                        table.push('
         );
-                        table.push_str(&format!(
-                            "_{} righe aggiuntive non mostrate_\n",
-                            result.rows.len() - max_rows
-                        ));
-                    }
-
-                    Some(table)
-                }
-
-                fn generate_numeric_chart(result: &mcp_sql::QueryResult) -> Result<Option<String>> {
-                    let numeric_column = result
-                        .columns
-                        .iter()
-                        .find(|column| is_numeric_type(&column.data_type))
-                        .cloned();
-
-                    let Some(column) = numeric_column else {
-                        return Ok(None);
-                    };
-
-                    let mut series = Vec::new();
-                    for row in &result.rows {
-                        if let Some(value) = row.get(&column.name) {
-                            if let Some(number) = value_to_f64(value) {
-                                series.push(number);
-                            }
-                        }
-                    }
-
-                    if series.len() < 2 {
-                        return Ok(None);
-                    }
-
-                    let mut path: PathBuf = std::env::temp_dir();
-                    path.push(format!("matepro_chart_{}.png", uuid::Uuid::new_v4()));
-
-                    let width = 800;
-                    let height = 480;
-
-                    {
-                        let drawing_area = BitMapBackend::new(&path, (width, height)).into_drawing_area();
-                        drawing_area
-                            .fill(&WHITE)
-                            .map_err(map_plotters_error)?;
-
-                        let (min_value, max_value) = compute_numeric_range(&series);
-                        let x_range = 0..(series.len() as i32);
-                        let y_range = adjust_numeric_range(min_value, max_value);
-
-                        let mut chart = ChartBuilder::on(&drawing_area)
-                            .caption(format!("Trend {}", column.name), ("sans-serif", 28))
-                            .margin(20)
-                            .x_label_area_size(40)
-                            .y_label_area_size(60)
-                            .build_cartesian_2d(x_range.clone(), y_range.clone())
-                            .map_err(map_plotters_error)?;
-
-                        chart
-                            .configure_mesh()
-                            .x_desc("Indice")
-                            .y_desc(&column.name)
-                            .light_line_style(&WHITE.mix(0.0))
-                            .draw()
-                            .map_err(map_plotters_error)?;
-
-                        chart
-                            .draw_series(LineSeries::new(
-                                series
-                                    .iter()
-                                    .enumerate()
-                                    .map(|(index, value)| (index as i32, *value)),
-                                &BLUE,
-                            ))
-                            .map_err(map_plotters_error)?
-                            .label(&column.name)
-                            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
-
-                        chart
-                            .draw_series(series.iter().enumerate().map(|(index, value)| {
-                                Circle::new((index as i32, *value), 3, BLUE.filled())
-                            }))
-                            .map_err(map_plotters_error)?;
-
-                        chart
-                            .configure_series_labels()
-                            .position(SeriesLabelPosition::UpperRight)
-                            .legend_area_size(20)
-                            .background_style(&WHITE.mix(0.8))
-                            .border_style(&BLACK)
-                            .draw()
-                            .map_err(map_plotters_error)?;
-
-                        drawing_area.present().map_err(map_plotters_error)?;
-                    }
-
-                    let bytes = fs::read(&path).context("Impossibile leggere il grafico generato")?;
-                    let _ = fs::remove_file(&path);
-                    let encoded = general_purpose::STANDARD.encode(bytes);
-
-                    Ok(Some(format!(
-                        "![Trend {}](data:image/png;base64,{})",
-                        column.name, encoded
-                    )))
-                }
-
-                fn map_plotters_error<E: std::fmt::Display>(
-                    err: plotters::drawing::DrawingAreaErrorKind<E>,
-                ) -> anyhow::Error {
-                    anyhow::anyhow!("Errore generazione grafico: {}", err)
-                }
-
-                fn compute_basic_stats(values: &[f64]) -> (f64, f64, f64) {
-                    let mut min_value = f64::INFINITY;
-                    let mut max_value = f64::NEG_INFINITY;
-                    let mut sum = 0.0f64;
-
-                    for value in values {
-                        if *value < min_value {
-                            min_value = *value;
-                        }
-                        if *value > max_value {
-                            max_value = *value;
-                        }
-                        sum += *value;
-                    }
-
-                    let mean = if values.is_empty() {
-                        0.0
-                    } else {
-                        sum / values.len() as f64
-                    };
-
-                    (min_value, max_value, mean)
-                }
-
-                fn compute_numeric_range(values: &[f64]) -> (f64, f64) {
-                    let mut min_value = f64::INFINITY;
-                    let mut max_value = f64::NEG_INFINITY;
-
-                    for value in values {
-                        if *value < min_value {
-                            min_value = *value;
-                        }
-                        if *value > max_value {
-                            max_value = *value;
-                        }
-                    }
-
-                    (min_value, max_value)
-                }
-
-                fn adjust_numeric_range(min_value: f64, max_value: f64) -> Range<f64> {
-                    if (max_value - min_value).abs() < f64::EPSILON {
-                        let padding = if min_value.abs() < 1.0 {
-                            1.0
-                        } else {
-                            min_value.abs() * 0.1
-                        };
-                        (min_value - padding)..(max_value + padding)
-                    } else {
-                        min_value..max_value
-                    }
-                }
-
-                fn value_to_f64(value: &serde_json::Value) -> Option<f64> {
-                    match value {
-                        serde_json::Value::Number(number) => number.as_f64(),
-                        serde_json::Value::String(text) => text.parse::<f64>().ok(),
-                        _ => None,
-                    }
-                }
-
-                fn value_to_display(value: &serde_json::Value) -> String {
-                    match value {
-                        serde_json::Value::Null => "null".to_string(),
-                        serde_json::Value::Bool(flag) => flag.to_string(),
-                        serde_json::Value::Number(number) => number.to_string(),
-                        serde_json::Value::String(text) => truncate_string(text, 60),
-                        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-                            truncate_string(&value.to_string(), 60)
-                        }
-                    }
-                }
-
-                fn truncate_string(input: &str, max_len: usize) -> String {
-                    let sanitized = input.replace('\n', " ").trim().to_string();
-                    if sanitized.chars().count() > max_len {
-                        let mut truncated = sanitized.chars().take(max_len.saturating_sub(3)).collect::<String>();
-                        truncated.push_str("...");
-                        truncated
-                    } else {
-                        sanitized
-                    }
-                }
-
-                fn escape_markdown_cell(text: &str) -> String {
-                    text.replace('|', "\\|")
-                        .replace('\n', " ")
-                        .trim()
-                        .to_string()
-                }
-
-                fn is_numeric_type(data_type: &str) -> bool {
-                    matches!(
-                        data_type,
-                        "int" | "float" | "decimal" | "money"
-                    )
-                }
 
         // Tool: FileRead
         tools.insert(
@@ -1577,4 +1242,351 @@ impl AgentSystem {
             connection_id
         ))
     }
+}
+
+fn summarize_query_result(result: &mcp_sql::QueryResult) -> String {
+    let total_rows = result.rows.len();
+    let total_columns = result.columns.len();
+
+    let column_highlights: Vec<String> = result
+        .columns
+        .iter()
+        .take(3)
+        .map(|column| summarize_column(result, column))
+        .collect();
+
+    let highlight_text = if column_highlights.is_empty() {
+        "nessun dato disponibile".to_string()
+    } else {
+        column_highlights.join("; ")
+    };
+
+    format!(
+        "- righe: {}\n- colonne: {}\n- colonne principali: {}\n",
+        total_rows, total_columns, highlight_text
+    )
+}
+
+fn summarize_column(result: &mcp_sql::QueryResult, column: &mcp_sql::SqlColumnInfo) -> String {
+    if is_numeric_type(&column.data_type) {
+        let mut numeric_values = Vec::new();
+        for row in &result.rows {
+            if let Some(value) = row.get(&column.name) {
+                if let Some(number) = value_to_f64(value) {
+                    numeric_values.push(number);
+                }
+            }
+        }
+
+        if !numeric_values.is_empty() {
+            let count = numeric_values.len();
+            let (min, max, mean) = compute_basic_stats(&numeric_values);
+            return format!(
+                "{} {}: {} valori, min {:.3}, max {:.3}, media {:.3}",
+                column.name, column.data_type, count, min, max, mean
+            );
+        }
+    }
+
+    if column.data_type == "bit" {
+        let mut true_count = 0usize;
+        let mut false_count = 0usize;
+        for row in &result.rows {
+            if let Some(value) = row.get(&column.name) {
+                if let Some(flag) = value.as_bool() {
+                    if flag {
+                        true_count += 1;
+                    } else {
+                        false_count += 1;
+                    }
+                }
+            }
+        }
+        if true_count + false_count > 0 {
+            return format!(
+                "{} bit: {} veri, {} falsi",
+                column.name, true_count, false_count
+            );
+        }
+    }
+
+    let mut samples = Vec::new();
+    for row in &result.rows {
+        if let Some(value) = row.get(&column.name) {
+            if value.is_null() {
+                continue;
+            }
+            let display = value_to_display(value);
+            if display.is_empty() {
+                continue;
+            }
+            if !samples.contains(&display) {
+                samples.push(display);
+            }
+            if samples.len() == 3 {
+                break;
+            }
+        }
+    }
+
+    if samples.is_empty() {
+        format!("{} {}: solo valori null", column.name, column.data_type)
+    } else {
+        format!(
+            "{} {}: esempi {}",
+            column.name,
+            column.data_type,
+            samples.join(", ")
+        )
+    }
+}
+
+fn render_result_table(result: &mcp_sql::QueryResult, max_rows: usize) -> Option<String> {
+    if result.columns.is_empty() {
+        return None;
+    }
+
+    let headers: Vec<String> = result
+        .columns
+        .iter()
+        .map(|column| column.name.clone())
+        .collect();
+    let mut table = String::new();
+    table.push_str("| ");
+    table.push_str(&headers.join(" | "));
+    table.push_str(" |");
+    table.push('\n');
+    table.push_str("| ");
+    table.push_str(
+        &headers
+            .iter()
+            .map(|_| "---")
+            .collect::<Vec<_>>()
+            .join(" | "),
+    );
+    table.push_str(" |");
+    table.push('\n');
+
+    for row in result.rows.iter().take(max_rows) {
+        table.push_str("| ");
+        let mut cells = Vec::new();
+        for column in &result.columns {
+            let value = row.get(&column.name).unwrap_or(&serde_json::Value::Null);
+            let display = escape_markdown_cell(&value_to_display(value));
+            cells.push(display);
+        }
+        table.push_str(&cells.join(" | "));
+        table.push_str(" |");
+        table.push('\n');
+    }
+
+    if result.rows.len() > max_rows {
+        table.push_str(&format!(
+            "_{} righe aggiuntive non mostrate_\n",
+            result.rows.len() - max_rows
+        ));
+    }
+
+    Some(table)
+}
+
+fn generate_numeric_chart(result: &mcp_sql::QueryResult) -> Result<Option<String>> {
+    let numeric_column = result
+        .columns
+        .iter()
+        .find(|column| is_numeric_type(&column.data_type))
+        .cloned();
+
+    let Some(column) = numeric_column else {
+        return Ok(None);
+    };
+
+    let mut series = Vec::new();
+    for row in &result.rows {
+        if let Some(value) = row.get(&column.name) {
+            if let Some(number) = value_to_f64(value) {
+                series.push(number);
+            }
+        }
+    }
+
+    if series.len() < 2 {
+        return Ok(None);
+    }
+
+    let mut path: PathBuf = std::env::temp_dir();
+    path.push(format!("matepro_chart_{}.png", uuid::Uuid::new_v4()));
+
+    let width = 800;
+    let height = 480;
+
+    {
+        let drawing_area = BitMapBackend::new(&path, (width, height)).into_drawing_area();
+        drawing_area.fill(&WHITE).map_err(map_plotters_error)?;
+
+        let (min_value, max_value) = compute_numeric_range(&series);
+        let x_range = 0..(series.len() as i32);
+        let y_range = adjust_numeric_range(min_value, max_value);
+
+        let mut chart = ChartBuilder::on(&drawing_area)
+            .caption(format!("Trend {}", column.name), ("sans-serif", 28))
+            .margin(20)
+            .x_label_area_size(40)
+            .y_label_area_size(60)
+            .build_cartesian_2d(x_range.clone(), y_range.clone())
+            .map_err(map_plotters_error)?;
+
+        chart
+            .configure_mesh()
+            .x_desc("Indice")
+            .y_desc(&column.name)
+            .light_line_style(&WHITE.mix(0.0))
+            .draw()
+            .map_err(map_plotters_error)?;
+
+        chart
+            .draw_series(LineSeries::new(
+                series
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| (index as i32, *value)),
+                &BLUE,
+            ))
+            .map_err(map_plotters_error)?
+            .label(&column.name)
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+
+        chart
+            .draw_series(
+                series
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| Circle::new((index as i32, *value), 3, BLUE.filled())),
+            )
+            .map_err(map_plotters_error)?;
+
+        chart
+            .configure_series_labels()
+            .position(SeriesLabelPosition::UpperRight)
+            .legend_area_size(20)
+            .background_style(&WHITE.mix(0.8))
+            .border_style(&BLACK)
+            .draw()
+            .map_err(map_plotters_error)?;
+
+        drawing_area.present().map_err(map_plotters_error)?;
+    }
+
+    let bytes = fs::read(&path).context("Impossibile leggere il grafico generato")?;
+    let _ = fs::remove_file(&path);
+    let encoded = general_purpose::STANDARD.encode(bytes);
+
+    Ok(Some(format!(
+        "![Trend {}](data:image/png;base64,{})",
+        column.name, encoded
+    )))
+}
+
+fn map_plotters_error<E: std::error::Error + Send + Sync + 'static>(
+    err: plotters::drawing::DrawingAreaErrorKind<E>,
+) -> anyhow::Error {
+    anyhow::anyhow!("Errore generazione grafico: {}", err)
+}
+
+fn compute_basic_stats(values: &[f64]) -> (f64, f64, f64) {
+    let mut min_value = f64::INFINITY;
+    let mut max_value = f64::NEG_INFINITY;
+    let mut sum = 0.0f64;
+
+    for value in values {
+        if *value < min_value {
+            min_value = *value;
+        }
+        if *value > max_value {
+            max_value = *value;
+        }
+        sum += *value;
+    }
+
+    let mean = if values.is_empty() {
+        0.0
+    } else {
+        sum / values.len() as f64
+    };
+
+    (min_value, max_value, mean)
+}
+
+fn compute_numeric_range(values: &[f64]) -> (f64, f64) {
+    let mut min_value = f64::INFINITY;
+    let mut max_value = f64::NEG_INFINITY;
+
+    for value in values {
+        if *value < min_value {
+            min_value = *value;
+        }
+        if *value > max_value {
+            max_value = *value;
+        }
+    }
+
+    (min_value, max_value)
+}
+
+fn adjust_numeric_range(min_value: f64, max_value: f64) -> Range<f64> {
+    if (max_value - min_value).abs() < f64::EPSILON {
+        let padding = if min_value.abs() < 1.0 {
+            1.0
+        } else {
+            min_value.abs() * 0.1
+        };
+        (min_value - padding)..(max_value + padding)
+    } else {
+        min_value..max_value
+    }
+}
+
+fn value_to_f64(value: &serde_json::Value) -> Option<f64> {
+    match value {
+        serde_json::Value::Number(number) => number.as_f64(),
+        serde_json::Value::String(text) => text.parse::<f64>().ok(),
+        _ => None,
+    }
+}
+
+fn value_to_display(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(flag) => flag.to_string(),
+        serde_json::Value::Number(number) => number.to_string(),
+        serde_json::Value::String(text) => truncate_string(text, 60),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            truncate_string(&value.to_string(), 60)
+        }
+    }
+}
+
+fn truncate_string(input: &str, max_len: usize) -> String {
+    let sanitized = input.replace('\n', " ").trim().to_string();
+    if sanitized.chars().count() > max_len {
+        let mut truncated = sanitized
+            .chars()
+            .take(max_len.saturating_sub(3))
+            .collect::<String>();
+        truncated.push_str("...");
+        truncated
+    } else {
+        sanitized
+    }
+}
+
+fn escape_markdown_cell(text: &str) -> String {
+    text.replace('|', "\\|")
+        .replace('\n', " ")
+        .trim()
+        .to_string()
+}
+
+fn is_numeric_type(data_type: &str) -> bool {
+    matches!(data_type, "int" | "float" | "decimal" | "money")
 }
