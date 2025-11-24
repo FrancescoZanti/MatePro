@@ -10,6 +10,14 @@ homepage = "https://github.com/FrancescoZanti/MatePro"
 keywords = ["ollama", "llm", "chat", "ai", "gui"]
 categories = ["command-line-utilities", "gui"]
 
+[lib]
+name = "matepro"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "matepro"
+path = "src/main.rs"
+
 [dependencies]
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -41,6 +49,11 @@ tokio-util = { version = "0.7", features = ["compat"] }  # Compatibility layer p
 uuid = { version = "1.0", features = ["v4"] }  # UUID per connection IDs
 lazy_static = "1.4"  # Static globals thread-safe
 futures-util = "0.3"  # Async stream utilities
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6", features = ["native-activity"] }
+android_logger = "0.13"
+log = "0.4"
 
 [package.metadata.deb]
 maintainer = "Francesco Zanti <me@francescozanti.dev>"

@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
 
 Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM, **ora con funzionalità agentiche** per il controllo del computer.
 
@@ -138,6 +138,7 @@ GitHub Actions creerà automaticamente:
 - 🐧 Binario Linux (tar.gz)
 - 📦 Pacchetto DEB per Debian/Ubuntu
 - 📦 Pacchetto RPM per Fedora/RHEL/CentOS
+- 📱 APK per Android (arm64-v8a, armeabi-v7a, x86_64)
 
 ## 🤝 Come Contribuire
 
