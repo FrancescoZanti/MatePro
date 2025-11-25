@@ -1,21 +1,32 @@
+# MatePro - Workspace Configuration
+# Main application is the Tauri GUI in src-tauri
+# Legacy egui code is preserved in src/ for reference
+
+[workspace]
+members = ["src-tauri"]
+resolver = "2"
+
+# Legacy package configuration (egui-based) - kept for reference
+# The main application has moved to src-tauri (Tauri-based GUI)
 [package]
-name = "matepro"
-version = "0.0.3-alpha"
+name = "matepro-legacy"
+version = "0.0.4"
 edition = "2021"
 authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
-description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"
+description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM (legacy egui version)"
 license = "MIT"
 repository = "https://github.com/FrancescoZanti/MatePro"
 homepage = "https://github.com/FrancescoZanti/MatePro"
 keywords = ["ollama", "llm", "chat", "ai", "gui"]
 categories = ["command-line-utilities", "gui"]
+publish = false
 
 [lib]
-name = "matepro"
+name = "matepro_legacy"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "matepro"
+name = "matepro-legacy"
 path = "src/main.rs"
 
 [dependencies]

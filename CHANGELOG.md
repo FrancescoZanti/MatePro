@@ -1,5 +1,68 @@
 # Changelog - MatePro
 
+## [0.0.4] - Migrazione GUI a Tauri (2025)
+
+### 🎉 Novità Principali
+
+#### Migrazione a Tauri
+- **BREAKING:** Migrazione completa dell'interfaccia grafica da egui/eframe a **Tauri v2**
+- Frontend HTML/CSS/JavaScript moderno con design elegante
+- Backend Rust con sistema IPC per comunicazione frontend-backend
+- Stesse funzionalità agentiche e SQL Server della versione precedente
+- Tema chiaro/scuro automatico basato sulle preferenze di sistema
+
+#### Architettura
+- `src-tauri/` - Backend Rust con Tauri v2
+  - Sistema di comandi IPC per tutte le operazioni
+  - Gestione stato thread-safe con tokio::sync::Mutex
+  - Plugin opener per apertura URL
+  - Plugin shell per operazioni di sistema
+- `ui/` - Frontend web moderno
+  - HTML5 semantico con accessibilità
+  - CSS moderno con variabili per temi
+  - JavaScript vanilla per massime performance
+  - Design responsive per diverse risoluzioni
+
+#### Vantaggi della Migrazione
+- 🚀 **Performance migliorate** - Rendering web nativo più veloce
+- 🎨 **UI più flessibile** - HTML/CSS permette styling più avanzato
+- 📦 **Bundle più piccoli** - Tauri produce binari più leggeri
+- 🔒 **Sicurezza** - Sandbox Tauri per isolamento processi
+- 🌐 **Cross-platform migliorato** - Stesso codice su tutti i sistemi
+
+#### Funzionalità Preservate
+- ✅ Scansione automatica rete per server Ollama
+- ✅ Chat conversazionale con rendering Markdown
+- ✅ Modalità Agente con tutti i tool
+- ✅ Connessione SQL Server (MCP)
+- ✅ Caricamento file (PDF, Excel, TXT)
+- ✅ Tema chiaro/scuro adattivo
+
+### 📦 Struttura Progetto
+```
+matepro/
+├── src-tauri/           # Tauri app (principale)
+│   ├── src/
+│   │   ├── main.rs      # Entry point e comandi IPC
+│   │   ├── agent.rs     # Sistema tool agentico
+│   │   └── mcp_sql.rs   # Connessione SQL Server
+│   ├── icons/           # Icone app
+│   └── tauri.conf.json  # Configurazione Tauri
+├── ui/                  # Frontend web
+│   ├── index.html       # Pagina principale
+│   ├── styles.css       # Stili
+│   └── app.js           # Logica frontend
+└── src/                 # Codice legacy egui (preservato)
+```
+
+### 🔧 Dipendenze Principali
+- `tauri` v2 - Framework desktop
+- `tauri-plugin-shell` v2 - Operazioni shell
+- `tauri-plugin-opener` v2 - Apertura URL/file
+- Tutte le dipendenze backend dalla versione precedente
+
+---
+
 ## [0.0.3-alpha] - Funzionalità Agentiche e SQL Server (2025)
 
 ### 🎉 Novità Principali
