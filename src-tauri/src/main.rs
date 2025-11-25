@@ -357,6 +357,18 @@ async fn chat(
 #[tauri::command]
 async fn read_file(path: String) -> Result<(String, String), String> {
     let path_buf = PathBuf::from(&path);
+    
+    // Validate path doesn't contain directory traversal
+    let path_str = path_buf.to_string_lossy();
+    if path_str.contains("..") {
+        return Err("Path non valido: directory traversal non permesso".to_string());
+    }
+    
+    // Validate the file exists
+    if !path_buf.exists() {
+        return Err(format!("File non trovato: {}", path));
+    }
+    
     let filename = path_buf
         .file_name()
         .and_then(|n| n.to_str())
