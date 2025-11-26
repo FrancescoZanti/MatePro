@@ -4,6 +4,7 @@
 [![Tauri](https://img.shields.io/badge/Tauri-v2-blue.svg)](https://tauri.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
+[![Release](https://github.com/FrancescoZanti/MatePro/actions/workflows/release.yml/badge.svg)](https://github.com/FrancescoZanti/MatePro/actions/workflows/release.yml)
 
 Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM, **ora con Tauri v2 e funzionalità agentiche** per il controllo del computer.
 

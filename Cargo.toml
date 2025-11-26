@@ -30,7 +30,7 @@ name = "matepro-legacy"
 path = "src/main.rs"
 
 [dependencies]
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
@@ -55,7 +55,7 @@ chrono = { version = "0.4", features = ["serde"] }  # Gestione date/ore per risu
 rust_decimal = { version = "1", features = ["serde"] }  # Supporto numeri decimali per SQL
 plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "ttf", "image", "line_series"] }  # Generazione grafici PNG
 # MCP SQL Server support
-tiberius = { version = "0.12", features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "winauth"] }  # SQL Server driver nativo
+tiberius = { version = "0.12", default-features = false, features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "tds73", "rustls"] }  # SQL Server driver nativo
 tokio-util = { version = "0.7", features = ["compat"] }  # Compatibility layer per async I/O
 uuid = { version = "1.0", features = ["v4"] }  # UUID per connection IDs
 lazy_static = "1.4"  # Static globals thread-safe
@@ -65,6 +65,9 @@ futures-util = "0.3"  # Async stream utilities
 android-activity = { version = "0.6", features = ["native-activity"] }
 android_logger = "0.13"
 log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+tiberius = { version = "0.12", default-features = false, features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "tds73", "rustls", "winauth"] }
 
 [package.metadata.deb]
 maintainer = "Francesco Zanti <me@francescozanti.dev>"
