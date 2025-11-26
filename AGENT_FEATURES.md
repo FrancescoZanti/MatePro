@@ -15,6 +15,7 @@ Quando attiva, l'assistente può:
 - Monitorare processi e sistema
 - Interagire autonomamente con il sistema operativo
 
+
 ## Tool Disponibili
 
 ### 1. `shell_execute` ⚠️ (Pericoloso)
