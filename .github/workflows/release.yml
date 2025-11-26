@@ -79,9 +79,9 @@ jobs:
       
       - name: Create tarball
         run: |
-          cd src-tauri/target/release
+          cd target/release
           tar -czf matepro-linux-x64.tar.gz matepro
-          mv matepro-linux-x64.tar.gz ../../../
+          mv matepro-linux-x64.tar.gz ../../
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
@@ -123,10 +123,10 @@ jobs:
       
       - name: Rename DEB file
         run: |
-          cd src-tauri/target/debian
+          cd target/debian
           DEB_FILE=$(ls *.deb)
           mv "$DEB_FILE" matepro-linux-amd64.deb
-          mv matepro-linux-amd64.deb ../../../
+          mv matepro-linux-amd64.deb ../../
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
@@ -173,10 +173,10 @@ jobs:
       
       - name: Rename RPM file
         run: |
-          cd src-tauri/target/generate-rpm
+          cd target/generate-rpm
           RPM_FILE=$(ls *.rpm)
           mv "$RPM_FILE" matepro-linux-x86_64.rpm
-          mv matepro-linux-x86_64.rpm ../../../
+          mv matepro-linux-x86_64.rpm ../../
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
@@ -212,7 +212,9 @@ jobs:
       - name: Prepare Windows artifacts
         shell: pwsh
         run: |
-          $bundleRoot = Join-Path "src-tauri" "target\\x86_64-pc-windows-msvc\\release\\bundle"
+          $bundleRoot = Join-Path "target" "x86_64-pc-windows-msvc"
+          $bundleRoot = Join-Path $bundleRoot "release"
+          $bundleRoot = Join-Path $bundleRoot "bundle"
           if (-not (Test-Path $bundleRoot)) {
             throw "Tauri bundle output not found"
           }
@@ -276,18 +278,18 @@ jobs:
       
       - name: Create universal binary
         run: |
-          mkdir -p src-tauri/target/universal/release
+          mkdir -p target/universal/release
           lipo -create \
-            src-tauri/target/x86_64-apple-darwin/release/matepro \
-            src-tauri/target/aarch64-apple-darwin/release/matepro \
-            -output src-tauri/target/universal/release/matepro
+            target/x86_64-apple-darwin/release/matepro \
+            target/aarch64-apple-darwin/release/matepro \
+            -output target/universal/release/matepro
       
       - name: Create app bundle
         run: |
           mkdir -p MatePro.app/Contents/MacOS
           mkdir -p MatePro.app/Contents/Resources
           
-          cp src-tauri/target/universal/release/matepro MatePro.app/Contents/MacOS/
+          cp target/universal/release/matepro MatePro.app/Contents/MacOS/
           
           cat > MatePro.app/Contents/Info.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
