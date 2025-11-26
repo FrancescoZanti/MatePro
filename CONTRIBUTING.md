@@ -189,6 +189,7 @@ Su GitHub:
 // Costanti: UPPER_SNAKE_CASE
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 
+
 // Tipi: PascalCase
 struct UserMessage { }
 enum AppState { }
