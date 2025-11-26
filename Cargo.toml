@@ -1,95 +1,13 @@
-# MatePro - Workspace Configuration
-# Main application is the Tauri GUI in src-tauri
-# Legacy egui code is preserved in src/ for reference
+
+# MatePro - Workspace configuration
+# Main application is the Tauri GUI in `src-tauri`
 
 [workspace]
 members = ["src-tauri"]
 resolver = "2"
 
-# Legacy package configuration (egui-based) - kept for reference
-# The main application has moved to src-tauri (Tauri-based GUI)
-[package]
-name = "matepro-legacy"
-version = "0.0.5-beta"
-edition = "2021"
-authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
-description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM (legacy egui version)"
-license = "MIT"
-repository = "https://github.com/FrancescoZanti/MatePro"
-homepage = "https://github.com/FrancescoZanti/MatePro"
-keywords = ["ollama", "llm", "chat", "ai", "gui"]
-categories = ["command-line-utilities", "gui"]
-publish = false
-
-[lib]
-name = "matepro_legacy"
-crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "matepro-legacy"
-path = "src/main.rs"
-
-[dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1", features = ["full"] }
-anyhow = "1.0"
-eframe = "0.29"
-egui = "0.29"
-poll-promise = "0.3"
-local-ip-address = "0.6"
-egui_commonmark = { version = "0.18", features = ["better_syntax_highlighting"] }
-pulldown-cmark = "0.11"
-rfd = "0.15"  # File dialog nativo cross-platform
-lopdf = "0.34"  # Parsing PDF
-calamine = "0.26"  # Lettura Excel (xlsx, xls, ods)
-regex = "1.10"  # Pattern matching per parsing tool calls
-walkdir = "2.4"  # Navigazione filesystem
-sysinfo = "0.30"  # Informazioni sistema e processi
-webbrowser = "1.0"  # Apertura browser
-url = "2.5"  # Parsing e validazione URL
-urlencoding = "2.1"  # Encoding URL per query
-base64 = "0.22"  # Encoding/decoding Base64 per grafici
-chrono = { version = "0.4", features = ["serde"] }  # Gestione date/ore per risultati SQL
-rust_decimal = { version = "1", features = ["serde"] }  # Supporto numeri decimali per SQL
-plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "ttf", "image", "line_series"] }  # Generazione grafici PNG
+# Note: legacy code lives in `src/` (egui) and `ui/` (web assets).
+# If you want to include the legacy crate in the workspace, add it to
+# `members` or move it to a separate repository. Keeping the workspace
+# minimal avoids accidental builds of desktop-only crates during CI.
 # MCP SQL Server support
-tiberius = { version = "0.12", default-features = false, features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "tds73", "rustls"] }  # SQL Server driver nativo
-tokio-util = { version = "0.7", features = ["compat"] }  # Compatibility layer per async I/O
-uuid = { version = "1.0", features = ["v4"] }  # UUID per connection IDs
-lazy_static = "1.4"  # Static globals thread-safe
-futures-util = "0.3"  # Async stream utilities
-
-[target.'cfg(target_os = "android")'.dependencies]
-android-activity = { version = "0.6", features = ["native-activity"] }
-android_logger = "0.13"
-log = "0.4"
-
-[target.'cfg(windows)'.dependencies]
-tiberius = { version = "0.12", default-features = false, features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "tds73", "rustls", "winauth"] }
-
-[package.metadata.deb]
-maintainer = "Francesco Zanti <me@francescozanti.dev>"
-copyright = "2025, Francesco Zanti <me@francescozanti.dev>"
-license-file = ["LICENSE", "4"]
-extended-description = """\
-MatePro è un client moderno per Ollama con interfaccia grafica elegante.
-Caratteristiche principali:
-- Scansione automatica della rete per trovare server Ollama
-- Interfaccia grafica in stile Apple con tema chiaro/scuro
-- Supporto completo per Markdown e formattazione codice
-- Chat conversazionale con mantenimento del contesto"""
-depends = "$auto, libgtk-3-0, libxcb-render0, libxcb-shape0, libxcb-xfixes0"
-section = "utils"
-priority = "optional"
-assets = [
-    ["target/release/matepro", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/matepro/README", "644"],
-]
-
-[package.metadata.generate-rpm]
-assets = [
-    { source = "target/release/matepro", dest = "/usr/bin/matepro", mode = "755" },
-    { source = "README.md", dest = "/usr/share/doc/matepro/README", mode = "644" },
-]
