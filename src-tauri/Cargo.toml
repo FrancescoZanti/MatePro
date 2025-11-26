@@ -76,3 +76,14 @@ custom-protocol = ["tauri/custom-protocol"]
 strip = true
 lto = true
 codegen-units = 1
+
+[package.metadata.generate-rpm]
+summary = "Client grafico per interagire con server Ollama"
+license = "MIT"
+group = "Applications/Internet"
+vendor = "Francesco Zanti"
+url = "https://github.com/FrancescoZanti/MatePro"
+requires = ["gtk3"]
+assets = [
+	{ source = "target/release/matepro", dest = "/usr/bin/matepro", mode = "755" }
+]

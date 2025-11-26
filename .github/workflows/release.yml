@@ -209,7 +209,8 @@ jobs:
         run: cargo install tauri-cli --locked
 
       - name: Build Tauri bundle
-        run: cargo tauri build --target x86_64-pc-windows-msvc
+        run: |
+          cargo tauri build --target x86_64-pc-windows-msvc --bundles "app,nsis"
         working-directory: src-tauri
 
       - name: Prepare Windows artifacts
