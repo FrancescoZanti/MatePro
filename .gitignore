@@ -3,3 +3,7 @@
 /src-tauri/target
 # Generated Android/iOS build artifacts
 /src-tauri/gen/
+
+# Legacy code (kept for reference only)
+# /legacy-egui/
+# /legacy-ui/

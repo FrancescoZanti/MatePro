@@ -8,7 +8,7 @@
 
 Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM, **ora con Tauri v2 e funzionalità agentiche** per il controllo del computer.
 
-> **v0.0.4**: Migrazione completa dell'interfaccia grafica a **Tauri v2** con frontend HTML/CSS/JS moderno.
+> **v0.0.5-beta**: Progetto principale in `src-tauri/` (Tauri v2). Il codice legacy (egui) è stato spostato in `legacy-egui/` e `legacy-ui/`.
 
 ![MatePro Screenshot](.github/images/matepro-main.png)
 
@@ -31,12 +31,28 @@ Client Ollama moderno con interfaccia grafica elegante per chattare con modelli 
 
 </details>
 
+## 📁 Struttura del Progetto
+
+- **`src-tauri/`** - Applicazione principale (Tauri v2) ✅ ATTIVA
+- **`legacy-egui/`** - Vecchia versione con egui (deprecata)
+- **`legacy-ui/`** - Vecchi asset HTML/CSS (deprecati)
+
+> **Nota**: Usa sempre `src-tauri/` per lo sviluppo. Le cartelle legacy sono mantenute per riferimento storico.
+
 ## Prerequisiti
 
-- Rust installato (https://rustup.rs/)
-- Ollama installato e in esecuzione (https://ollama.ai/)
+- Rust installato (<https://rustup.rs/>)
+- Ollama installato e in esecuzione (<https://ollama.ai/>)
 - Almeno un modello scaricato (es: `ollama pull llama2`)
-- Per Linux: dipendenze GTK e WebKit (`sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev`)
+- Per Linux: dipendenze GTK e WebKit
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y pkg-config build-essential \
+  libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
+  libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+  libsoup3.0-dev
+```
 
 ## Installazione
 
