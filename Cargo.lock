@@ -3344,7 +3344,7 @@ checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
 name = "matepro"
-version = "0.0.4"
+version = "0.0.5-beta"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3376,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "matepro-legacy"
-version = "0.0.5-alpha"
+version = "0.0.5-beta"
 dependencies = [
  "android-activity",
  "android_logger",

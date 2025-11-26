@@ -69,7 +69,9 @@ jobs:
           override: true
       
       - name: Build release
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+        run: |
+          cd src-tauri
+          cargo build --release
       
       - name: Create tarball
         run: |
@@ -107,7 +109,9 @@ jobs:
         run: cargo install cargo-deb
       
       - name: Build DEB package
-        run: cargo deb --manifest-path src-tauri/Cargo.toml
+        run: |
+          cd src-tauri
+          cargo deb
       
       - name: Rename DEB file
         run: |
@@ -146,10 +150,14 @@ jobs:
         run: cargo install cargo-generate-rpm
       
       - name: Build release
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+        run: |
+          cd src-tauri
+          cargo build --release
       
       - name: Generate RPM
-        run: cargo generate-rpm --manifest-path src-tauri/Cargo.toml
+        run: |
+          cd src-tauri
+          cargo generate-rpm
       
       - name: Rename RPM file
         run: |
@@ -245,10 +253,14 @@ jobs:
           rustup target add aarch64-apple-darwin
       
       - name: Build release (x86_64)
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml --target x86_64-apple-darwin
+        run: |
+          cd src-tauri
+          cargo build --release --target x86_64-apple-darwin
       
       - name: Build release (aarch64)
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
+        run: |
+          cd src-tauri
+          cargo build --release --target aarch64-apple-darwin
       
       - name: Create universal binary
         run: |
