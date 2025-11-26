@@ -87,6 +87,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: matepro-linux-x64.tar.gz
+          tag_name: ${{ needs.create-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -132,6 +133,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: matepro-linux-amd64.deb
+          tag_name: ${{ needs.create-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -182,6 +184,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: matepro-linux-x86_64.rpm
+          tag_name: ${{ needs.create-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -244,6 +247,7 @@ jobs:
           files: |
             matepro-windows-installer.exe
             matepro-windows-x64.zip
+          tag_name: ${{ needs.create-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -332,6 +336,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: matepro-macos-universal.dmg
+          tag_name: ${{ needs.create-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -345,6 +350,7 @@ jobs:
       - name: Update Release Body
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ needs.create-tag.outputs.tag }}
           body: |
             # MatePro Release
             
