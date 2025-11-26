@@ -212,7 +212,7 @@ jobs:
       - name: Prepare Windows artifacts
         shell: pwsh
         run: |
-          $bundleRoot = Join-Path "src-tauri" "target\\release\\bundle"
+          $bundleRoot = Join-Path "src-tauri" "target\\x86_64-pc-windows-msvc\\release\\bundle"
           if (-not (Test-Path $bundleRoot)) {
             throw "Tauri bundle output not found"
           }
