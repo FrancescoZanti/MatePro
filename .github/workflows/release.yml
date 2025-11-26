@@ -210,7 +210,7 @@ jobs:
 
       - name: Build Tauri bundle
         run: |
-          cargo tauri build --target x86_64-pc-windows-msvc --bundles "app,nsis"
+          cargo tauri build --target x86_64-pc-windows-msvc --bundles "msi,nsis"
         working-directory: src-tauri
 
       - name: Prepare Windows artifacts
