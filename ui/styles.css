@@ -602,6 +602,23 @@ button:disabled {
     color: var(--text-secondary);
 }
 
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+
+.checkbox-group small {
+    margin-left: 1.8rem;
+}
+
 .radio-group {
     display: flex;
     flex-direction: column;

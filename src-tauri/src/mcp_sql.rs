@@ -38,6 +38,7 @@ pub struct SqlConnection {
     pub auth_type: String,
     pub username: Option<String>,
     pub password: Option<String>,
+    pub trust_server_certificate: bool,
 }
 
 pub struct SqlConnectionManager {
@@ -82,8 +83,21 @@ pub fn validate_readonly_query(query: &str) -> Result<()> {
     let query_upper = query.trim().to_uppercase();
 
     let forbidden_keywords = [
-        "UPDATE", "INSERT", "DELETE", "DROP", "CREATE", "ALTER", "TRUNCATE",
-        "EXEC", "EXECUTE", "SP_", "XP_", "MERGE", "BULK", "WRITETEXT", "UPDATETEXT",
+        "UPDATE",
+        "INSERT",
+        "DELETE",
+        "DROP",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "EXEC",
+        "EXECUTE",
+        "SP_",
+        "XP_",
+        "MERGE",
+        "BULK",
+        "WRITETEXT",
+        "UPDATETEXT",
     ];
 
     let without_line_comments: String = query_upper
@@ -148,7 +162,11 @@ fn column_type_label(column_type: ColumnType) -> &'static str {
     match column_type {
         ColumnType::Null => "null",
         ColumnType::Bit | ColumnType::Bitn => "bit",
-        ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 | ColumnType::Intn => "int",
+        ColumnType::Int1
+        | ColumnType::Int2
+        | ColumnType::Int4
+        | ColumnType::Int8
+        | ColumnType::Intn => "int",
         ColumnType::Float4 | ColumnType::Float8 | ColumnType::Floatn => "float",
         ColumnType::Decimaln | ColumnType::Numericn => "decimal",
         ColumnType::Money | ColumnType::Money4 => "money",
@@ -179,11 +197,16 @@ fn bool_value(row: &Row, idx: usize) -> Result<Option<Value>> {
 }
 
 fn int_value(row: &Row, idx: usize) -> Result<Option<Value>> {
-    Ok(row.try_get::<i64, _>(idx)?.map(|v| Value::Number(Number::from(v))))
+    Ok(row
+        .try_get::<i64, _>(idx)?
+        .map(|v| Value::Number(Number::from(v))))
 }
 
 fn float_value(row: &Row, idx: usize) -> Result<Option<Value>> {
-    Ok(row.try_get::<f64, _>(idx)?.and_then(Number::from_f64).map(Value::Number))
+    Ok(row
+        .try_get::<f64, _>(idx)?
+        .and_then(Number::from_f64)
+        .map(Value::Number))
 }
 
 fn decimal_value(row: &Row, idx: usize) -> Result<Option<Value>> {
@@ -195,11 +218,15 @@ fn decimal_value(row: &Row, idx: usize) -> Result<Option<Value>> {
 }
 
 fn string_value(row: &Row, idx: usize) -> Result<Option<Value>> {
-    Ok(row.try_get::<&str, _>(idx)?.map(|text| Value::String(text.to_string())))
+    Ok(row
+        .try_get::<&str, _>(idx)?
+        .map(|text| Value::String(text.to_string())))
 }
 
 fn binary_value(row: &Row, idx: usize) -> Result<Option<Value>> {
-    Ok(row.try_get::<&[u8], _>(idx)?.map(|bytes| Value::String(general_purpose::STANDARD.encode(bytes))))
+    Ok(row
+        .try_get::<&[u8], _>(idx)?
+        .map(|bytes| Value::String(general_purpose::STANDARD.encode(bytes))))
 }
 
 fn datetime_value(row: &Row, idx: usize) -> Result<Option<Value>> {
@@ -222,19 +249,24 @@ fn column_value_to_json(row: &Row, idx: usize, column_type: ColumnType) -> Resul
     let value = match column_type {
         ColumnType::Null => Value::Null,
         ColumnType::Bit | ColumnType::Bitn => bool_value(row, idx)?.unwrap_or(Value::Null),
-        ColumnType::Int1 | ColumnType::Int2 | ColumnType::Int4 | ColumnType::Int8 | ColumnType::Intn => {
-            int_value(row, idx)?.unwrap_or(Value::Null)
-        }
+        ColumnType::Int1
+        | ColumnType::Int2
+        | ColumnType::Int4
+        | ColumnType::Int8
+        | ColumnType::Intn => int_value(row, idx)?.unwrap_or(Value::Null),
         ColumnType::Float4 | ColumnType::Float8 | ColumnType::Floatn => {
             float_value(row, idx)?.unwrap_or(Value::Null)
         }
         ColumnType::Decimaln | ColumnType::Numericn | ColumnType::Money | ColumnType::Money4 => {
             decimal_value(row, idx)?.unwrap_or(Value::Null)
         }
-        ColumnType::Datetime | ColumnType::Datetime4 | ColumnType::Datetimen | ColumnType::Daten |
-        ColumnType::Timen | ColumnType::Datetime2 | ColumnType::DatetimeOffsetn => {
-            datetime_value(row, idx)?.unwrap_or(Value::Null)
-        }
+        ColumnType::Datetime
+        | ColumnType::Datetime4
+        | ColumnType::Datetimen
+        | ColumnType::Daten
+        | ColumnType::Timen
+        | ColumnType::Datetime2
+        | ColumnType::DatetimeOffsetn => datetime_value(row, idx)?.unwrap_or(Value::Null),
         ColumnType::Guid => string_value(row, idx)?.unwrap_or(Value::Null),
         ColumnType::BigVarBin | ColumnType::BigBinary | ColumnType::Image => {
             binary_value(row, idx)?.unwrap_or(Value::Null)
@@ -246,12 +278,18 @@ fn column_value_to_json(row: &Row, idx: usize, column_type: ColumnType) -> Resul
 }
 
 #[cfg(windows)]
-pub async fn connect_windows_auth(server: &str, database: &str) -> Result<SqlClient> {
+pub async fn connect_windows_auth(
+    server: &str,
+    database: &str,
+    trust_server_certificate: bool,
+) -> Result<SqlClient> {
     let mut config = Config::new();
     config.host(server);
     config.database(database);
     config.authentication(AuthMethod::Integrated);
-    config.trust_cert();
+    if trust_server_certificate {
+        config.trust_cert();
+    }
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     let client = Client::connect(config, tcp.compat_write()).await?;
@@ -259,7 +297,12 @@ pub async fn connect_windows_auth(server: &str, database: &str) -> Result<SqlCli
 }
 
 #[cfg(not(windows))]
-pub async fn connect_windows_auth(server: &str, database: &str) -> Result<SqlClient> {
+pub async fn connect_windows_auth(
+    server: &str,
+    database: &str,
+    trust_server_certificate: bool,
+) -> Result<SqlClient> {
+    let _ = trust_server_certificate;
     Err(anyhow!(
         "Autenticazione Windows non supportata su questo sistema operativo.\n\
         Su Linux/macOS usa autenticazione SQL (username/password).\n\
@@ -274,12 +317,15 @@ pub async fn connect_sql_auth(
     database: &str,
     username: &str,
     password: &str,
+    trust_server_certificate: bool,
 ) -> Result<SqlClient> {
     let mut config = Config::new();
     config.host(server);
     config.database(database);
     config.authentication(AuthMethod::sql_server(username, password));
-    config.trust_cert();
+    if trust_server_certificate {
+        config.trust_cert();
+    }
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     let client = Client::connect(config, tcp.compat_write()).await?;
@@ -364,7 +410,7 @@ pub async fn describe_table(
 
 pub async fn connect_with_info(conn: &SqlConnection) -> Result<SqlClient> {
     if conn.auth_type == "windows" {
-        connect_windows_auth(&conn.server, &conn.database).await
+        connect_windows_auth(&conn.server, &conn.database, conn.trust_server_certificate).await
     } else {
         let username = conn
             .username
@@ -375,7 +421,14 @@ pub async fn connect_with_info(conn: &SqlConnection) -> Result<SqlClient> {
             .as_deref()
             .ok_or_else(|| anyhow!("Password mancante per connessione SQL"))?;
 
-        connect_sql_auth(&conn.server, &conn.database, username, password).await
+        connect_sql_auth(
+            &conn.server,
+            &conn.database,
+            username,
+            password,
+            conn.trust_server_certificate,
+        )
+        .await
     }
 }
 

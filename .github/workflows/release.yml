@@ -132,6 +132,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Install system dependencies
+        run: choco install -y nsis
+
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -139,18 +142,46 @@ jobs:
           toolchain: stable
           override: true
       
-      - name: Build release
-        run: cargo build --release
-      
-      - name: Create ZIP
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Build Tauri bundle
+        run: cargo tauri build --target x86_64-pc-windows-msvc
+        working-directory: src-tauri
+
+      - name: Prepare Windows artifacts
+        shell: pwsh
         run: |
-          cd target/release
-          Compress-Archive -Path matepro.exe -DestinationPath ../../matepro-windows-x64.zip
+          $bundleRoot = Join-Path "src-tauri" "target\\release\\bundle"
+          if (-not (Test-Path $bundleRoot)) {
+            throw "Tauri bundle output not found"
+          }
+
+          $nsisDir = Join-Path $bundleRoot "nsis"
+          $installer = Get-ChildItem $nsisDir -Filter "*-setup.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $installer) {
+            throw "NSIS installer not found"
+          }
+          Copy-Item $installer.FullName "matepro-windows-installer.exe" -Force
+
+          $binDir = Join-Path $bundleRoot "bin"
+          $binary = Get-ChildItem $binDir -Filter "*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $binary) {
+            throw "Bundled executable not found"
+          }
+          Copy-Item $binary.FullName "matepro-windows-x64.exe" -Force
+
+          if (Test-Path "matepro-windows-x64.zip") {
+            Remove-Item "matepro-windows-x64.zip"
+          }
+          Compress-Archive -Path "matepro-windows-x64.exe" -DestinationPath "matepro-windows-x64.zip"
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
-          files: matepro-windows-x64.zip
+          files: |
+            matepro-windows-installer.exe
+            matepro-windows-x64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -449,7 +480,8 @@ jobs:
             
             ## 📦 Download
             Scegli il pacchetto per il tuo sistema operativo:
-            - **Windows**: matepro-windows-x64.zip
+            - **Windows Installer**: matepro-windows-installer.exe
+            - **Windows Portable**: matepro-windows-x64.zip
             - **macOS**: matepro-macos-universal.dmg (Intel + Apple Silicon)
             - **Linux DEB**: matepro-linux-amd64.deb
             - **Linux RPM**: matepro-linux-x86_64.rpm

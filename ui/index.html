@@ -138,6 +138,13 @@
                             <input type="password" id="sql-password">
                         </div>
                     </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" id="sql-trust-cert">
+                            Accetta certificato server non attendibile (disabilita verifica TLS)
+                        </label>
+                        <small>Usa solo con certificati self-signed in ambienti controllati</small>
+                    </div>
                     <div id="sql-status" class="sql-status hidden"></div>
                     <div class="warning-box">
                         🔒 SOLO LETTURA: Le query sono limitate a SELECT. UPDATE, INSERT, DELETE non sono permesse.

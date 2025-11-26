@@ -264,14 +264,11 @@ async fn scan_network() -> Vec<String> {
 }
 
 #[tauri::command]
-async fn connect_to_server(
-    state: State<'_, Arc<AppState>>,
-    url: String,
-) -> Result<(), String> {
+async fn connect_to_server(state: State<'_, Arc<AppState>>, url: String) -> Result<(), String> {
     if !check_server(&url).await {
         return Err("Impossibile connettersi al server Ollama".to_string());
     }
-    
+
     let mut ollama_url = state.ollama_url.lock().await;
     *ollama_url = url;
     Ok(())
@@ -303,7 +300,10 @@ async fn list_models(state: State<'_, Arc<AppState>>) -> Result<Vec<ModelInfoRes
         .filter_map(|m| {
             let name = m["name"].as_str()?.to_string();
             let size = m["size"].as_u64().unwrap_or(0);
-            let model = ModelInfo { name: name.clone(), size };
+            let model = ModelInfo {
+                name: name.clone(),
+                size,
+            };
             Some(ModelInfoResponse {
                 name,
                 size,
@@ -357,26 +357,26 @@ async fn chat(
 #[tauri::command]
 async fn read_file(path: String) -> Result<(String, String), String> {
     let path_buf = PathBuf::from(&path);
-    
+
     // Validate path doesn't contain directory traversal
     let path_str = path_buf.to_string_lossy();
     if path_str.contains("..") {
         return Err("Path non valido: directory traversal non permesso".to_string());
     }
-    
+
     // Validate the file exists
     if !path_buf.exists() {
         return Err(format!("File non trovato: {}", path));
     }
-    
+
     let filename = path_buf
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("file")
         .to_string();
 
-    let content = extract_text_from_file(&path_buf)
-        .map_err(|e| format!("Errore lettura file: {}", e))?;
+    let content =
+        extract_text_from_file(&path_buf).map_err(|e| format!("Errore lettura file: {}", e))?;
 
     Ok((filename, content))
 }
@@ -436,17 +436,19 @@ async fn sql_connect(
     auth_method: String,
     username: Option<String>,
     password: Option<String>,
+    trust_server_certificate: Option<bool>,
 ) -> Result<String, String> {
     let connection_id = format!("sql_{}", uuid::Uuid::new_v4());
+    let trust_server_certificate = trust_server_certificate.unwrap_or(false);
 
     let _client = if auth_method == "windows" {
-        mcp_sql::connect_windows_auth(&server, &database)
+        mcp_sql::connect_windows_auth(&server, &database, trust_server_certificate)
             .await
             .map_err(|e| e.to_string())?
     } else {
         let user = username.as_deref().ok_or("Username richiesto")?;
         let pass = password.as_deref().ok_or("Password richiesta")?;
-        mcp_sql::connect_sql_auth(&server, &database, user, pass)
+        mcp_sql::connect_sql_auth(&server, &database, user, pass, trust_server_certificate)
             .await
             .map_err(|e| e.to_string())?
     };
@@ -458,10 +460,11 @@ async fn sql_connect(
         auth_type: auth_method,
         username,
         password,
+        trust_server_certificate,
     };
 
     state.sql_manager.add_connection(conn_info);
-    
+
     let mut last_conn = state.last_sql_connection_id.lock().await;
     *last_conn = Some(connection_id.clone());
 

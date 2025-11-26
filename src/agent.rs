@@ -321,6 +321,12 @@ impl AgentSystem {
                         description: "Password SQL (solo se auth_method='sql')".to_string(),
                         required: false,
                     },
+                    ToolParameter {
+                        name: "trust_server_certificate".to_string(),
+                        param_type: "boolean".to_string(),
+                        description: "Imposta true per accettare certificati TLS non attendibili (self-signed)".to_string(),
+                        required: false,
+                    },
                 ],
                 dangerous: false,
             },
@@ -547,6 +553,10 @@ impl AgentSystem {
                 tool_name: call.tool_name.clone(),
             },
         };
+
+        if tool_def.dangerous {
+            self.allow_dangerous = false;
+        }
 
         self.execution_log.push(tool_result.clone());
         Ok(tool_result)
@@ -894,6 +904,11 @@ impl AgentSystem {
                 anyhow::anyhow!("Parametro 'auth_method' mancante (usa 'windows' o 'sql')")
             })?;
 
+        let trust_server_certificate = params
+            .get("trust_server_certificate")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
         // Genera ID connessione unico
         let connection_id = format!("sql_{}", uuid::Uuid::new_v4().to_string());
 
@@ -902,7 +917,7 @@ impl AgentSystem {
 
         // Connetti in base al metodo di autenticazione
         let client = if auth_method == "windows" {
-            mcp_sql::connect_windows_auth(server, database).await?
+            mcp_sql::connect_windows_auth(server, database, trust_server_certificate).await?
         } else if auth_method == "sql" {
             let username = params
                 .get("username")
@@ -917,7 +932,14 @@ impl AgentSystem {
             stored_username = Some(username.to_string());
             stored_password = Some(password.to_string());
 
-            mcp_sql::connect_sql_auth(server, database, username, password).await?
+            mcp_sql::connect_sql_auth(
+                server,
+                database,
+                username,
+                password,
+                trust_server_certificate,
+            )
+            .await?
         } else {
             return Err(anyhow::anyhow!(
                 "auth_method non valido: usa 'windows' o 'sql'"
@@ -931,6 +953,7 @@ impl AgentSystem {
             auth_type: auth_method.to_string(),
             username: stored_username,
             password: stored_password,
+            trust_server_certificate,
         };
 
         // Rilascia il client dopo aver validato la connessione
@@ -948,9 +971,18 @@ impl AgentSystem {
             Connection ID: {}\n\
             Server: {}\n\
             Database: {}\n\
-            Autenticazione: {}\n\n\
+            Autenticazione: {}\n\
+            Verifica certificato TLS: {}\n\n\
             Usa questo connection_id per le query successive.",
-            connection_id, server, database, auth_method
+            connection_id,
+            server,
+            database,
+            auth_method,
+            if trust_server_certificate {
+                "disabilitata"
+            } else {
+                "attiva"
+            }
         ))
     }
 

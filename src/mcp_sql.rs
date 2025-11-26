@@ -40,6 +40,7 @@ pub struct SqlConnection {
     pub auth_type: String,
     pub username: Option<String>,
     pub password: Option<String>,
+    pub trust_server_certificate: bool,
 }
 
 /// Gestore globale delle connessioni SQL
@@ -300,7 +301,11 @@ fn column_value_to_json(row: &Row, idx: usize, column_type: ColumnType) -> Resul
 /// Connette a SQL Server con autenticazione Windows (dominio)
 /// NOTA: Autenticazione Windows richiede funzionalità specifiche del sistema operativo
 /// Su Linux potrebbe richiedere configurazione Kerberos
-pub async fn connect_windows_auth(server: &str, database: &str) -> Result<SqlClient> {
+pub async fn connect_windows_auth(
+    server: &str,
+    database: &str,
+    trust_server_certificate: bool,
+) -> Result<SqlClient> {
     #[cfg(windows)]
     {
         let mut config = Config::new();
@@ -309,7 +314,10 @@ pub async fn connect_windows_auth(server: &str, database: &str) -> Result<SqlCli
         // Su Windows usa SSPI (Windows Integrated Auth)
         // Usa le credenziali correnti del processo per l'autenticazione integrata
         config.authentication(AuthMethod::Integrated);
-        config.trust_cert();
+        if trust_server_certificate {
+            // Permette certificati self-signed solo se l'utente lo richiede esplicitamente
+            config.trust_cert();
+        }
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
         let client = Client::connect(config, tcp.compat_write()).await?;
@@ -318,6 +326,7 @@ pub async fn connect_windows_auth(server: &str, database: &str) -> Result<SqlCli
 
     #[cfg(not(windows))]
     {
+        let _ = trust_server_certificate;
         // Su Linux/Mac l'autenticazione Windows non è supportata direttamente
         // Suggerisci di usare SQL Auth
         Err(anyhow!(
@@ -336,12 +345,15 @@ pub async fn connect_sql_auth(
     database: &str,
     username: &str,
     password: &str,
+    trust_server_certificate: bool,
 ) -> Result<SqlClient> {
     let mut config = Config::new();
     config.host(server);
     config.database(database);
     config.authentication(AuthMethod::sql_server(username, password));
-    config.trust_cert();
+    if trust_server_certificate {
+        config.trust_cert();
+    }
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     let client = Client::connect(config, tcp.compat_write()).await?;
@@ -440,13 +452,14 @@ pub async fn test_connection(
     auth_method: &str,
     username: Option<&str>,
     password: Option<&str>,
+    trust_server_certificate: bool,
 ) -> Result<String> {
     let mut client = if auth_method == "windows" {
-        connect_windows_auth(server, database).await?
+        connect_windows_auth(server, database, trust_server_certificate).await?
     } else {
         let user = username.ok_or_else(|| anyhow!("Username richiesto per SQL Auth"))?;
         let pass = password.ok_or_else(|| anyhow!("Password richiesta per SQL Auth"))?;
-        connect_sql_auth(server, database, user, pass).await?
+        connect_sql_auth(server, database, user, pass, trust_server_certificate).await?
     };
 
     // Query semplice per testare
@@ -464,7 +477,7 @@ pub async fn test_connection(
 /// Crea un client SQL a partire dalle informazioni memorizzate per una connessione
 pub async fn connect_with_info(conn: &SqlConnection) -> Result<SqlClient> {
     if conn.auth_type == "windows" {
-        connect_windows_auth(&conn.server, &conn.database).await
+        connect_windows_auth(&conn.server, &conn.database, conn.trust_server_certificate).await
     } else {
         let username = conn
             .username
@@ -475,7 +488,14 @@ pub async fn connect_with_info(conn: &SqlConnection) -> Result<SqlClient> {
             .as_deref()
             .ok_or_else(|| anyhow!("Password mancante per connessione SQL"))?;
 
-        connect_sql_auth(&conn.server, &conn.database, username, password).await
+        connect_sql_auth(
+            &conn.server,
+            &conn.database,
+            username,
+            password,
+            conn.trust_server_certificate,
+        )
+        .await
     }
 }
 

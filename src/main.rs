@@ -340,8 +340,9 @@ struct OllamaChatApp {
     sql_auth_method: String, // "windows" o "sql"
     sql_username: String,
     sql_password: String,
-    sql_connection_status: Option<String>, // None, Some("connecting"), Some("connected"), Some("error: ...")
+    sql_connection_status: Option<String>, // None, Some("connecting"), Some("connected: ..."), Some("error: ...")
     sql_test_promise: Option<Promise<Result<String>>>,
+    sql_trust_server_certificate: bool,
 }
 
 impl Default for OllamaChatApp {
@@ -379,6 +380,7 @@ impl Default for OllamaChatApp {
             sql_password: String::new(),
             sql_connection_status: None,
             sql_test_promise: None,
+            sql_trust_server_certificate: false,
         }
     }
 }
@@ -499,6 +501,8 @@ impl OllamaChatApp {
             self.agent_system.set_allow_dangerous(true);
             self.pending_tool_calls = vec![tool_call];
             self.execute_pending_tools();
+            // Riattiva la richiesta di conferma per le prossime esecuzioni
+            self.agent_system.set_allow_dangerous(false);
         }
     }
 
@@ -520,6 +524,7 @@ impl OllamaChatApp {
         let auth_method = self.sql_auth_method.clone();
         let username = self.sql_username.clone();
         let password = self.sql_password.clone();
+        let trust_server_certificate = self.sql_trust_server_certificate;
 
         self.sql_test_promise = Some(Promise::spawn_thread("test_sql", move || {
             tokio::runtime::Runtime::new()
@@ -527,9 +532,17 @@ impl OllamaChatApp {
                 .block_on(async move {
                     // Crea una connessione di test usando il modulo mcp_sql
                     let connection_result = if auth_method == "windows" {
-                        mcp_sql::connect_windows_auth(&server, &database).await
+                        mcp_sql::connect_windows_auth(&server, &database, trust_server_certificate)
+                            .await
                     } else {
-                        mcp_sql::connect_sql_auth(&server, &database, &username, &password).await
+                        mcp_sql::connect_sql_auth(
+                            &server,
+                            &database,
+                            &username,
+                            &password,
+                            trust_server_certificate,
+                        )
+                        .await
                     };
 
                     match connection_result {
@@ -555,6 +568,7 @@ impl OllamaChatApp {
                                 } else {
                                     None
                                 },
+                                trust_server_certificate,
                             };
 
                             let manager = agent::SQL_MANAGER.lock().await;
@@ -586,7 +600,7 @@ impl OllamaChatApp {
 
 • Caratteri Unicode: √ ² ³ ∫ ∑ π ∞ ≤ ≥ ≠ ± × ÷
 • Notazione testuale: sqrt(), ^2, ^3, /
-• Esempi: 
+• Esempi:
   - x = (-b ± √(b² - 4ac)) / (2a)
   - a² + b² = c²
   - lim(x→∞) f(x)
@@ -888,6 +902,7 @@ impl eframe::App for OllamaChatApp {
                     }
                 }
                 self.tool_execution_promise = None;
+                self.agent_system.set_allow_dangerous(false);
             }
         }
 
@@ -933,17 +948,17 @@ impl eframe::App for OllamaChatApp {
                             .size(14.0)
                             .color(egui::Color32::from_rgb(142, 142, 147)));
                         ui.add_space(40.0);
-                        
+
                         ui.horizontal(|ui| {
                             ui.add_space(40.0);
                             ui.vertical(|ui| {
                                 ui.set_min_width(400.0);
-                                
+
                                 // Mostra server scoperti
                                 if !self.discovered_servers.is_empty() {
                                     ui.label("Server Ollama trovati:");
                                     ui.add_space(8.0);
-                                    
+
                                     for server in &self.discovered_servers {
                                         let is_selected = &self.ollama_url == server;
                                         let button_text = if server.contains("localhost") || server.contains("127.0.0.1") {
@@ -951,7 +966,7 @@ impl eframe::App for OllamaChatApp {
                                         } else {
                                             format!("🌐 {}", server)
                                         };
-                                        
+
                                         let button = if is_selected {
                                             egui::Button::new(egui::RichText::new(&button_text).color(egui::Color32::WHITE))
                                                 .fill(egui::Color32::from_rgb(0, 122, 255))
@@ -960,13 +975,13 @@ impl eframe::App for OllamaChatApp {
                                             egui::Button::new(&button_text)
                                                 .min_size(egui::vec2(400.0, 36.0))
                                         };
-                                        
+
                                         if ui.add(button).clicked() {
                                             self.ollama_url = server.clone();
                                         }
                                         ui.add_space(4.0);
                                     }
-                                    
+
                                     ui.add_space(16.0);
                                     ui.label("Oppure inserisci un URL personalizzato:");
                                     ui.add_space(6.0);
@@ -974,33 +989,33 @@ impl eframe::App for OllamaChatApp {
                                     ui.label("URL dell'istanza Ollama");
                                     ui.add_space(6.0);
                                 }
-                                
+
                                 let text_edit = egui::TextEdit::singleline(&mut self.ollama_url)
                                     .desired_width(f32::INFINITY)
                                     .min_size(egui::vec2(400.0, 44.0))
                                     .font(egui::TextStyle::Body);
                                 ui.add(text_edit);
-                                
+
                                 ui.add_space(20.0);
-                                
+
                                 ui.horizontal(|ui| {
                                     let connect_button = egui::Button::new(
                                         egui::RichText::new("Connetti").size(16.0).color(egui::Color32::WHITE)
                                     )
                                     .fill(egui::Color32::from_rgb(0, 122, 255))
                                     .min_size(egui::vec2(280.0, 44.0));
-                                    
+
                                     if ui.add(connect_button).clicked() {
                                         self.load_models();
                                     }
-                                    
+
                                     ui.add_space(8.0);
-                                    
+
                                     let rescan_button = egui::Button::new(
                                         egui::RichText::new("🔄 Ricarica").size(16.0)
                                     )
                                     .min_size(egui::vec2(110.0, 44.0));
-                                    
+
                                     if ui.add(rescan_button).clicked() {
                                         self.start_network_scan();
                                     }
@@ -1030,7 +1045,7 @@ impl eframe::App for OllamaChatApp {
                     } else {
                         egui::Color32::from_rgb(248, 248, 248)
                     };
-                    
+
                     egui::Frame::none()
                         .fill(header_bg)
                         .inner_margin(egui::Margin::symmetric(16.0, 12.0))
@@ -1038,7 +1053,7 @@ impl eframe::App for OllamaChatApp {
                             ui.horizontal(|ui| {
                                 ui.heading("💬");
                                 ui.add_space(8.0);
-                                
+
                                 egui::ComboBox::new("model_selector", "")
                                     .selected_text(egui::RichText::new(self.selected_model.as_ref().unwrap()).size(16.0))
                                     .width(280.0)
@@ -1046,38 +1061,38 @@ impl eframe::App for OllamaChatApp {
                                         for model in &self.available_models {
                                             let (indicator, color) = model.weight_category();
                                             let size_text = format!("{:.1} GB", model.size_gb());
-                                            
+
                                             ui.horizontal(|ui| {
                                                 let response = ui.selectable_value(
                                                     &mut self.selected_model,
                                                     Some(model.name.clone()),
                                                     &model.name,
                                                 );
-                                                
+
                                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                     ui.label(egui::RichText::new(size_text).size(11.0).color(egui::Color32::GRAY));
                                                     ui.label(egui::RichText::new(indicator).color(color));
                                                 });
-                                                
+
                                                 response
                                             });
                                         }
                                     });
-                                
+
                                 ui.add_space(12.0);
-                                
+
                                 // Toggle per modalità agente
                                 let agent_color = if self.agent_mode_enabled {
                                     egui::Color32::from_rgb(52, 199, 89)
                                 } else {
                                     egui::Color32::from_rgb(142, 142, 147)
                                 };
-                                
-                                ui.toggle_value(&mut self.agent_mode_enabled, 
+
+                                ui.toggle_value(&mut self.agent_mode_enabled,
                                     egui::RichText::new("🤖 Modalità Agente")
                                         .color(agent_color)
                                         .size(14.0));
-                                
+
                                 if self.agent_mode_enabled {
                                     ui.label(
                                         egui::RichText::new(format!("({}/{})", self.current_agent_iteration, self.max_agent_iterations))
@@ -1085,11 +1100,16 @@ impl eframe::App for OllamaChatApp {
                                             .color(egui::Color32::GRAY)
                                     );
                                 }
-                                
+
                                 ui.add_space(12.0);
-                                
+
                                 // Pulsante configurazione SQL Server
-                                let sql_btn_text = if self.sql_connection_status.as_ref().map(|s| s.as_str()) == Some("connected") {
+                                let sql_connected = self
+                                    .sql_connection_status
+                                    .as_ref()
+                                    .map(|s| s.starts_with("connected"))
+                                    .unwrap_or(false);
+                                let sql_btn_text = if sql_connected {
                                     egui::RichText::new("🗄️ SQL (✓)")
                                         .color(egui::Color32::from_rgb(52, 199, 89))
                                         .size(14.0)
@@ -1098,28 +1118,28 @@ impl eframe::App for OllamaChatApp {
                                         .color(egui::Color32::from_rgb(142, 142, 147))
                                         .size(14.0)
                                 };
-                                
+
                                 if ui.button(sql_btn_text).on_hover_text("Configura database SQL Server").clicked() {
                                     self.show_sql_config = true;
                                 }
-                                
+
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     let disconnect_btn = egui::Button::new(
                                         egui::RichText::new("✕").size(20.0).strong()
                                     )
                                     .frame(false);
-                                    
+
                                     if ui.add(disconnect_btn).on_hover_text("Disconnetti").clicked() {
                                         *self = Self::default();
                                     }
-                                    
+
                                     ui.add_space(8.0);
-                                    
+
                                     let new_chat_btn = egui::Button::new(
                                         egui::RichText::new("⟲").size(20.0).strong()
                                     )
                                     .frame(false);
-                                    
+
                                     if ui.add(new_chat_btn).on_hover_text("Nuova chat").clicked() {
                                         self.conversation.clear();
                                         self.error_message = None;
@@ -1135,14 +1155,14 @@ impl eframe::App for OllamaChatApp {
 
                     // Area messaggi con più spazio
                     let available_height = ui.available_height() - 150.0;
-                    
+
                     egui::ScrollArea::vertical()
                         .max_height(available_height)
                         .auto_shrink([false, false])
                         .stick_to_bottom(true)
                         .show(ui, |ui| {
                             ui.add_space(12.0);
-                            
+
                             if self.conversation.is_empty() {
                                 ui.vertical_centered(|ui| {
                                     ui.add_space(60.0);
@@ -1159,24 +1179,24 @@ impl eframe::App for OllamaChatApp {
                                     );
                                 });
                             }
-                            
+
                             for message in &self.conversation {
                                 // Salta i messaggi nascosti (istruzioni di sistema)
                                 if message.hidden {
                                     continue;
                                 }
-                                
+
                                 let is_user = message.role == "user";
                                 let is_dark = ui.style().visuals.dark_mode;
-                                
+
                                 ui.horizontal_top(|ui| {
                                     let max_bubble_width = ui.available_width() * 0.7;
-                                    
+
                                     if is_user {
                                         // Spazio a sinistra per messaggi utente
                                         ui.allocate_space(egui::vec2(ui.available_width() - max_bubble_width, 0.0));
                                     }
-                                    
+
                                     let frame_color = if is_user {
                                         egui::Color32::from_rgb(0, 122, 255)
                                     } else if is_dark {
@@ -1184,7 +1204,7 @@ impl eframe::App for OllamaChatApp {
                                     } else {
                                         egui::Color32::from_rgb(229, 229, 234)
                                     };
-                                    
+
                                     let text_color = if is_user {
                                         egui::Color32::WHITE
                                     } else if is_dark {
@@ -1192,14 +1212,14 @@ impl eframe::App for OllamaChatApp {
                                     } else {
                                         egui::Color32::BLACK
                                     };
-                                    
+
                                     egui::Frame::none()
                                         .fill(frame_color)
                                         .rounding(egui::Rounding::same(18.0))
                                         .inner_margin(egui::Margin::symmetric(14.0, 10.0))
                                         .show(ui, |ui| {
                                             ui.set_max_width(max_bubble_width);
-                                            
+
                                             if is_user {
                                                 // Messaggi utente semplici senza markdown
                                                 ui.vertical(|ui| {
@@ -1208,7 +1228,7 @@ impl eframe::App for OllamaChatApp {
                                                             .color(text_color)
                                                             .size(14.5)
                                                     );
-                                                    
+
                                                     // Timestamp in basso a destra
                                                     if let Some(timestamp) = &message.timestamp {
                                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
@@ -1225,7 +1245,7 @@ impl eframe::App for OllamaChatApp {
                                                 {
                                                     let style = ui.style_mut();
                                                     style.visuals.hyperlink_color = egui::Color32::from_rgb(0, 122, 255);
-                                                    
+
                                                     // Aumenta la dimensione del font per migliore leggibilità
                                                     style.text_styles.insert(
                                                         egui::TextStyle::Body,
@@ -1239,11 +1259,11 @@ impl eframe::App for OllamaChatApp {
                                                         egui::TextStyle::Heading,
                                                         egui::FontId::new(18.0, egui::FontFamily::Proportional),
                                                     );
-                                                    
+
                                                     // Aumenta la spaziatura tra elementi
                                                     style.spacing.item_spacing = egui::vec2(8.0, 10.0);
                                                 }
-                                                
+
                                                 // Rendering markdown con sintassi codice e formule (Unicode)
                                                 ui.vertical(|ui| {
                                                     CommonMarkViewer::new().show(
@@ -1251,7 +1271,7 @@ impl eframe::App for OllamaChatApp {
                                                         &mut self.markdown_cache,
                                                         &message.content,
                                                     );
-                                                    
+
                                                     // Timestamp in basso a sinistra per l'assistente
                                                     if let Some(timestamp) = &message.timestamp {
                                                         ui.label(
@@ -1264,7 +1284,7 @@ impl eframe::App for OllamaChatApp {
                                             }
                                         });
                                 });
-                                
+
                                 ui.add_space(10.0);
                             }
 
@@ -1276,7 +1296,7 @@ impl eframe::App for OllamaChatApp {
                                 } else {
                                     egui::Color32::from_rgb(229, 229, 234)
                                 };
-                                
+
                                 ui.horizontal(|ui| {
                                     ui.add_space(0.0);
                                     egui::Frame::none()
@@ -1320,7 +1340,7 @@ impl eframe::App for OllamaChatApp {
                     } else {
                         egui::Color32::from_rgb(248, 248, 248)
                     };
-                    
+
                     egui::Frame::none()
                         .fill(input_bg)
                         .inner_margin(egui::Margin::symmetric(20.0, 12.0))
@@ -1338,7 +1358,7 @@ impl eframe::App for OllamaChatApp {
                                             } else {
                                                 egui::Color32::from_rgb(229, 229, 234)
                                             };
-                                            
+
                                             egui::Frame::none()
                                                 .fill(chip_color)
                                                 .rounding(egui::Rounding::same(12.0))
@@ -1347,13 +1367,13 @@ impl eframe::App for OllamaChatApp {
                                                     ui.horizontal(|ui| {
                                                         ui.label(egui::RichText::new("📎").size(12.0));
                                                         ui.label(egui::RichText::new(filename).size(12.0));
-                                                        
+
                                                         let remove_btn = egui::Button::new(
                                                             egui::RichText::new("✕").size(10.0)
                                                         )
                                                         .frame(false)
                                                         .small();
-                                                        
+
                                                         if ui.add(remove_btn).clicked() {
                                                             to_remove = Some(i);
                                                         }
@@ -1361,31 +1381,31 @@ impl eframe::App for OllamaChatApp {
                                                 });
                                         }
                                     });
-                                    
+
                                     if let Some(index) = to_remove {
                                         self.attached_files.remove(index);
                                     }
-                                    
+
                                     ui.add_space(8.0);
                                 }
-                                
+
                                 ui.horizontal(|ui| {
                                     // Area di testo multilinea grande e confortevole
                                     let text_edit = egui::TextEdit::multiline(&mut self.input_text)
                                         .desired_rows(3)
                                         .hint_text("Scrivi un messaggio...")
                                         .font(egui::TextStyle::Body);
-                                    
+
                                     // Calcola larghezza considerando i pulsanti (circa 100px) + margini
                                     let buttons_width = 100.0;
                                     let response = ui.add_sized(
                                         egui::vec2(ui.available_width() - buttons_width, 80.0),
                                         text_edit
                                     );
-                                    
+
                                     // Invia con Cmd+Enter o Ctrl+Enter
                                     let modifiers = ui.input(|i| i.modifiers);
-                                    if response.has_focus() 
+                                    if response.has_focus()
                                         && ui.input(|i| i.key_pressed(egui::Key::Enter))
                                         && (modifiers.command || modifiers.ctrl) {
                                         self.send_message();
@@ -1393,7 +1413,7 @@ impl eframe::App for OllamaChatApp {
                                     }
 
                                     ui.add_space(8.0);
-                                    
+
                                     // Pulsanti orizzontali
                                     ui.horizontal(|ui| {
                                         // Pulsante allegato file
@@ -1402,7 +1422,7 @@ impl eframe::App for OllamaChatApp {
                                         } else {
                                             egui::Color32::from_rgb(174, 174, 178)
                                         };
-                                        
+
                                         let attach_button = egui::Button::new(
                                             egui::RichText::new("📎").size(16.0)
                                         )
@@ -1415,18 +1435,18 @@ impl eframe::App for OllamaChatApp {
                                             .clicked() {
                                             self.open_file_dialog();
                                         }
-                                        
+
                                         ui.add_space(4.0);
-                                        
+
                                         // Pulsante di invio grande e tondeggiante
-                                        let button_enabled = self.chat_promise.is_none() 
+                                        let button_enabled = self.chat_promise.is_none()
                                             && (!self.input_text.trim().is_empty() || !self.attached_files.is_empty());
                                         let button_color = if button_enabled {
                                             egui::Color32::from_rgb(0, 122, 255)
                                         } else {
                                             egui::Color32::from_rgb(142, 142, 147)
                                         };
-                                        
+
                                         let send_button = egui::Button::new(
                                             egui::RichText::new("▶").size(18.0).color(egui::Color32::WHITE).strong()
                                         )
@@ -1441,7 +1461,7 @@ impl eframe::App for OllamaChatApp {
                                         }
                                     });
                                 });
-                                
+
                                 // Suggerimento tasti rapidi
                                 ui.add_space(4.0);
                                 let hint_color = if is_dark {
@@ -1552,10 +1572,10 @@ impl eframe::App for OllamaChatApp {
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     ui.set_min_width(500.0);
-                    
+
                     ui.vertical(|ui| {
                         ui.add_space(10.0);
-                        
+
                         // Server
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Server:").size(14.0).strong());
@@ -1563,51 +1583,51 @@ impl eframe::App for OllamaChatApp {
                             ui.text_edit_singleline(&mut self.sql_server);
                         });
                         ui.label(egui::RichText::new("  (es: localhost, 192.168.1.10, server.domain.com)").size(11.0).color(egui::Color32::GRAY));
-                        
+
                         ui.add_space(8.0);
-                        
+
                         // Database
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Database:").size(14.0).strong());
                             ui.add_space(8.0);
                             ui.text_edit_singleline(&mut self.sql_database);
                         });
-                        
+
                         ui.add_space(12.0);
                         ui.separator();
                         ui.add_space(12.0);
-                        
+
                         // Metodo autenticazione
                         ui.label(egui::RichText::new("Autenticazione:").size(14.0).strong());
                         ui.add_space(8.0);
-                        
+
                         ui.horizontal(|ui| {
-                            ui.radio_value(&mut self.sql_auth_method, "windows".to_string(), 
+                            ui.radio_value(&mut self.sql_auth_method, "windows".to_string(),
                                 egui::RichText::new("🪟 Windows (Integrated)").size(13.0));
                             ui.add_space(16.0);
-                            ui.radio_value(&mut self.sql_auth_method, "sql".to_string(), 
+                            ui.radio_value(&mut self.sql_auth_method, "sql".to_string(),
                                 egui::RichText::new("🔑 SQL Authentication").size(13.0));
                         });
-                        
+
                         if self.sql_auth_method == "windows" {
                             ui.add_space(8.0);
                             ui.label(egui::RichText::new("  ℹ️ Su Windows con dominio, verranno usate le credenziali dell'utente corrente.")
                                 .size(11.0)
                                 .color(egui::Color32::from_rgb(0, 122, 255)));
                         }
-                        
+
                         // Username e Password (solo per SQL Auth)
                         if self.sql_auth_method == "sql" {
                             ui.add_space(12.0);
-                            
+
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new("Username:").size(14.0));
                                 ui.add_space(8.0);
                                 ui.text_edit_singleline(&mut self.sql_username);
                             });
-                            
+
                             ui.add_space(8.0);
-                            
+
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new("Password:").size(14.0));
                                 ui.add_space(8.0);
@@ -1616,14 +1636,33 @@ impl eframe::App for OllamaChatApp {
                                 ui.add(password_edit);
                             });
                         }
-                        
+
                         ui.add_space(12.0);
                         ui.separator();
                         ui.add_space(12.0);
-                        
+
+                        ui.checkbox(
+                            &mut self.sql_trust_server_certificate,
+                            egui::RichText::new(
+                                "Accetta certificato server non attendibile (disabilita verifica TLS)",
+                            )
+                            .size(12.0),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "  Disattiva solo se usi certificati self-signed in ambienti di test.",
+                            )
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(142, 142, 147)),
+                        );
+
+                        ui.add_space(12.0);
+                        ui.separator();
+                        ui.add_space(12.0);
+
                         // Status connessione
                         if let Some(status) = &self.sql_connection_status {
-                            let (icon, color) = if status == "connected" {
+                            let (icon, color) = if status.starts_with("connected") {
                                 ("✓", egui::Color32::from_rgb(52, 199, 89))
                             } else if status == "connecting" {
                                 ("⟳", egui::Color32::from_rgb(0, 122, 255))
@@ -1632,15 +1671,15 @@ impl eframe::App for OllamaChatApp {
                             } else {
                                 ("", egui::Color32::GRAY)
                             };
-                            
+
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new(icon).size(16.0).color(color));
                                 ui.label(egui::RichText::new(status).size(13.0).color(color));
                             });
-                            
+
                             ui.add_space(12.0);
                         }
-                        
+
                         // Nota read-only
                         egui::Frame::none()
                             .fill(egui::Color32::from_rgb(255, 249, 196))
@@ -1651,9 +1690,9 @@ impl eframe::App for OllamaChatApp {
                                     .size(11.0)
                                     .color(egui::Color32::from_rgb(138, 109, 0)));
                             });
-                        
+
                         ui.add_space(16.0);
-                        
+
                         // Pulsanti
                         ui.horizontal(|ui| {
                             let test_btn = egui::Button::new(
@@ -1661,23 +1700,23 @@ impl eframe::App for OllamaChatApp {
                             )
                             .fill(egui::Color32::from_rgb(0, 122, 255))
                             .min_size(egui::vec2(160.0, 36.0));
-                            
+
                             if ui.add(test_btn).clicked() && self.sql_test_promise.is_none() {
                                 should_test = true;
                             }
-                            
+
                             ui.add_space(8.0);
-                            
+
                             let close_btn = egui::Button::new(
                                 egui::RichText::new("Chiudi").size(14.0)
                             )
                             .min_size(egui::vec2(100.0, 36.0));
-                            
+
                             if ui.add(close_btn).clicked() {
                                 should_close = true;
                             }
                         });
-                        
+
                         ui.add_space(10.0);
                     });
                 });
@@ -1696,9 +1735,17 @@ impl eframe::App for OllamaChatApp {
             if let Some(result) = promise.ready() {
                 match result {
                     Ok(connection_id) => {
-                        self.sql_connection_status = Some("connected".to_string());
-                        // Mostra anche l'ID connessione nel log (opzionale)
-                        println!("✅ Connessione SQL stabilita: {}", connection_id);
+                        let tls_state = if self.sql_trust_server_certificate {
+                            "TLS non verificato"
+                        } else {
+                            "TLS verificato"
+                        };
+                        self.sql_connection_status =
+                            Some(format!("connected: {} ({})", connection_id, tls_state));
+                        println!(
+                            "✅ Connessione SQL stabilita: {} ({})",
+                            connection_id, tls_state
+                        );
                     }
                     Err(e) => {
                         self.sql_connection_status = Some(format!("error: {}", e));

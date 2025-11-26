@@ -54,7 +54,9 @@ impl ToolResult {
             format!(
                 "❌ **{}** fallito:\n```\n{}\n```",
                 self.tool_name,
-                self.error.as_ref().unwrap_or(&"Errore sconosciuto".to_string())
+                self.error
+                    .as_ref()
+                    .unwrap_or(&"Errore sconosciuto".to_string())
             )
         }
     }
@@ -76,7 +78,8 @@ impl AgentSystem {
             "shell_execute".to_string(),
             ToolDefinition {
                 name: "shell_execute".to_string(),
-                description: "Esegue un comando shell. USALO per operazioni sul sistema.".to_string(),
+                description: "Esegue un comando shell. USALO per operazioni sul sistema."
+                    .to_string(),
                 parameters: vec![ToolParameter {
                     name: "command".to_string(),
                     param_type: "string".to_string(),
@@ -179,14 +182,12 @@ impl AgentSystem {
             ToolDefinition {
                 name: "browser_open".to_string(),
                 description: "Apre un URL nel browser predefinito.".to_string(),
-                parameters: vec![
-                    ToolParameter {
-                        name: "url".to_string(),
-                        param_type: "string".to_string(),
-                        description: "URL completo da aprire".to_string(),
-                        required: true,
-                    },
-                ],
+                parameters: vec![ToolParameter {
+                    name: "url".to_string(),
+                    param_type: "string".to_string(),
+                    description: "URL completo da aprire".to_string(),
+                    required: true,
+                }],
                 dangerous: false,
             },
         );
@@ -223,7 +224,8 @@ impl AgentSystem {
                     ToolParameter {
                         name: "mode".to_string(),
                         param_type: "string".to_string(),
-                        description: "Modalità: 'search' (default), 'directions' per percorsi".to_string(),
+                        description: "Modalità: 'search' (default), 'directions' per percorsi"
+                            .to_string(),
                         required: false,
                     },
                 ],
@@ -284,6 +286,13 @@ impl AgentSystem {
                         description: "Password SQL".to_string(),
                         required: false,
                     },
+                    ToolParameter {
+                        name: "trust_server_certificate".to_string(),
+                        param_type: "boolean".to_string(),
+                        description: "Imposta true per accettare certificati TLS non attendibili"
+                            .to_string(),
+                        required: false,
+                    },
                 ],
                 dangerous: false,
             },
@@ -293,7 +302,8 @@ impl AgentSystem {
             "sql_query".to_string(),
             ToolDefinition {
                 name: "sql_query".to_string(),
-                description: "Esegue query SELECT su database SQL Server (SOLO LETTURA).".to_string(),
+                description: "Esegue query SELECT su database SQL Server (SOLO LETTURA)."
+                    .to_string(),
                 parameters: vec![
                     ToolParameter {
                         name: "connection_id".to_string(),
@@ -392,7 +402,11 @@ impl AgentSystem {
             if !tool.parameters.is_empty() {
                 desc.push_str("**Parametri:**\n");
                 for param in &tool.parameters {
-                    let required = if param.required { "obbligatorio" } else { "opzionale" };
+                    let required = if param.required {
+                        "obbligatorio"
+                    } else {
+                        "opzionale"
+                    };
                     desc.push_str(&format!(
                         "- `{}` ({}): {} - {}\n",
                         param.name, param.param_type, required, param.description
@@ -438,7 +452,10 @@ impl AgentSystem {
     }
 
     pub async fn execute_tool(&mut self, call: &ToolCall) -> Result<ToolResult> {
-        let tool_def = self.tools.get(&call.tool_name).context("Tool non trovato")?;
+        let tool_def = self
+            .tools
+            .get(&call.tool_name)
+            .context("Tool non trovato")?;
 
         if tool_def.dangerous && !self.allow_dangerous {
             return Ok(ToolResult {
@@ -463,7 +480,7 @@ impl AgentSystem {
             _ => Err(anyhow::anyhow!("Tool non implementato: {}", call.tool_name)),
         };
 
-        Ok(match result {
+        let tool_result = match result {
             Ok(output) => ToolResult {
                 success: true,
                 output,
@@ -476,7 +493,13 @@ impl AgentSystem {
                 error: Some(e.to_string()),
                 tool_name: call.tool_name.clone(),
             },
-        })
+        };
+
+        if tool_def.dangerous {
+            self.allow_dangerous = false;
+        }
+
+        Ok(tool_result)
     }
 
     pub fn set_allow_dangerous(&mut self, allow: bool) {
@@ -512,17 +535,24 @@ impl AgentSystem {
         }
     }
 
-    async fn execute_file_read(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_file_read(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
             .context("Parametro 'path' mancante")?;
 
-        let content = fs::read_to_string(path).context(format!("Impossibile leggere file: {}", path))?;
+        let content =
+            fs::read_to_string(path).context(format!("Impossibile leggere file: {}", path))?;
         Ok(content)
     }
 
-    async fn execute_file_write(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_file_write(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -537,7 +567,10 @@ impl AgentSystem {
         Ok(format!("File scritto: {} ({} bytes)", path, content.len()))
     }
 
-    async fn execute_file_list(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_file_list(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -615,7 +648,10 @@ impl AgentSystem {
         Ok(info)
     }
 
-    async fn execute_browser_open(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_browser_open(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let url_str = params
             .get("url")
             .and_then(|v| v.as_str())
@@ -625,7 +661,10 @@ impl AgentSystem {
         Ok(format!("URL: {}", url_str))
     }
 
-    async fn execute_web_search(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_web_search(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let query = params
             .get("query")
             .and_then(|v| v.as_str())
@@ -636,7 +675,10 @@ impl AgentSystem {
         Ok(format!("URL: {}", search_url))
     }
 
-    async fn execute_map_open(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_map_open(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let location = params
             .get("location")
             .and_then(|v| v.as_str())
@@ -663,14 +705,20 @@ impl AgentSystem {
         Ok(format!("URL: {}", map_url))
     }
 
-    async fn execute_youtube_search(&self, params: &HashMap<String, serde_json::Value>) -> Result<String> {
+    async fn execute_youtube_search(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
         let query = params
             .get("query")
             .and_then(|v| v.as_str())
             .context("Parametro 'query' mancante")?;
 
         let encoded_query = urlencoding::encode(query);
-        let youtube_url = format!("https://www.youtube.com/results?search_query={}", encoded_query);
+        let youtube_url = format!(
+            "https://www.youtube.com/results?search_query={}",
+            encoded_query
+        );
         Ok(format!("URL: {}", youtube_url))
     }
 }

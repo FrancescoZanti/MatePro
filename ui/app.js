@@ -62,6 +62,7 @@ const elements = {
     sqlCredentials: document.getElementById('sql-credentials'),
     sqlUsername: document.getElementById('sql-username'),
     sqlPassword: document.getElementById('sql-password'),
+    sqlTrustCert: document.getElementById('sql-trust-cert'),
     sqlStatus: document.getElementById('sql-status'),
     testSqlBtn: document.getElementById('test-sql-btn'),
     
@@ -600,10 +601,12 @@ async function testSqlConnection() {
             authMethod,
             username: authMethod === 'sql' ? elements.sqlUsername.value : null,
             password: authMethod === 'sql' ? elements.sqlPassword.value : null,
+            trustServerCertificate: elements.sqlTrustCert.checked,
         });
         
         elements.sqlStatus.className = 'sql-status connected';
-        elements.sqlStatus.textContent = `✓ Connesso! ID: ${connectionId}`;
+        const tlsState = elements.sqlTrustCert.checked ? 'TLS non verificato' : 'TLS verificato';
+        elements.sqlStatus.textContent = `✓ Connesso! ID: ${connectionId} (${tlsState})`;
         elements.sqlConfigBtn.textContent = '🗄️ SQL (✓)';
         
     } catch (error) {
