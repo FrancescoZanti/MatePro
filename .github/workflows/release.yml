@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     branches:
-      - '**'
+      - master
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,7 +14,6 @@ permissions:
 jobs:
 
   build-linux:
-    if: startsWith(github.ref, 'refs/tags/')
     name: Build Linux
     runs-on: ubuntu-latest
     steps:
@@ -49,7 +48,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-deb:
-    if: startsWith(github.ref, 'refs/tags/')
     name: Build DEB Package
     runs-on: ubuntu-latest
     steps:
@@ -88,7 +86,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-rpm:
-    if: startsWith(github.ref, 'refs/tags/')
     name: Build RPM Package
     runs-on: ubuntu-latest
     steps:
@@ -130,7 +127,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
-    if: startsWith(github.ref, 'refs/tags/')
     name: Build Windows
     runs-on: windows-latest
     steps:
@@ -190,7 +186,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos:
-    if: startsWith(github.ref, 'refs/tags/')
     name: Build macOS
     runs-on: macos-latest
     steps:
@@ -242,7 +237,7 @@ jobs:
             <string>MatePro</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
-            <string>CFBundleShortVersionString</key>
+            <key>CFBundleShortVersionString</key>
             <string>0.1.0</string>
             <key>CFBundleVersion</key>
             <string>0.1.0</string>
@@ -274,7 +269,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-android:
-    if: startsWith(github.ref, 'refs/tags/')
     name: Build Android
     runs-on: ubuntu-latest
     steps:
@@ -469,7 +463,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   update-release-notes:
-    if: startsWith(github.ref, 'refs/tags/')
     name: Update Release Notes
     needs: [build-linux, build-deb, build-rpm, build-windows, build-macos, build-android]
     runs-on: ubuntu-latest
