@@ -1,1 +1,5 @@
 /target
+# Tauri build artifacts
+/src-tauri/target
+# Generated Android/iOS build artifacts
+/src-tauri/gen/

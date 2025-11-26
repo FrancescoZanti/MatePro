@@ -1,10 +1,13 @@
 # MatePro 🤖
 
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-v2-blue.svg)](https://tauri.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
 
-Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM, **ora con funzionalità agentiche** per il controllo del computer.
+Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM, **ora con Tauri v2 e funzionalità agentiche** per il controllo del computer.
+
+> **v0.0.4**: Migrazione completa dell'interfaccia grafica a **Tauri v2** con frontend HTML/CSS/JS moderno.
 
 ![MatePro Screenshot](.github/images/matepro-main.png)
 
@@ -32,17 +35,28 @@ Client Ollama moderno con interfaccia grafica elegante per chattare con modelli 
 - Rust installato (https://rustup.rs/)
 - Ollama installato e in esecuzione (https://ollama.ai/)
 - Almeno un modello scaricato (es: `ollama pull llama2`)
+- Per Linux: dipendenze GTK e WebKit (`sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev`)
 
 ## Installazione
 
 ```bash
+# Clona il repository
+git clone https://github.com/FrancescoZanti/MatePro.git
+cd MatePro
+
+# Build con Tauri
+cd src-tauri
 cargo build --release
 ```
 
 ## Utilizzo
 
 ```bash
+# Dalla cartella src-tauri
 cargo run --release
+
+# Oppure con Tauri CLI (se installato)
+cargo tauri dev
 ```
 
 Oppure dopo la compilazione:
@@ -106,7 +120,7 @@ Oppure dopo la compilazione:
 ## Esempio d'uso
 
 1. Avvia Ollama: `ollama serve`
-2. Esegui MatePro: `cargo run --release`
+2. Esegui MatePro: `cd src-tauri && cargo run --release`
 3. L'app scansionerà automaticamente la rete per trovare server Ollama
 4. Seleziona un server dalla lista o inserisci un URL personalizzato
 5. Scegli un modello dalla lista
@@ -114,19 +128,21 @@ Oppure dopo la compilazione:
 
 ## Dipendenze
 
-- `eframe` / `egui` - Framework per interfaccia grafica
+- `tauri` v2 - Framework desktop cross-platform
+- `tauri-plugin-shell` - Operazioni shell
+- `tauri-plugin-opener` - Apertura URL e file
 - `reqwest` - Client HTTP per comunicare con l'API Ollama
 - `serde` / `serde_json` - Serializzazione/deserializzazione JSON
 - `tokio` - Runtime asincrono
 - `anyhow` - Gestione errori semplificata
-- `poll-promise` - Gestione chiamate asincrone nell'UI
 - `local-ip-address` - Rilevamento IP locale per scansione rete
+- `tiberius` - Driver SQL Server nativo
 
 ## Release
 
 Per creare una nuova release:
 
-1. Aggiorna la versione in `Cargo.toml`
+1. Aggiorna la versione in `src-tauri/Cargo.toml` e `src-tauri/tauri.conf.json`
 2. Committa le modifiche: `git commit -am "Release v0.1.0"`
 3. Crea un tag: `git tag v0.1.0`
 4. Pusha il tag: `git push origin v0.1.0`

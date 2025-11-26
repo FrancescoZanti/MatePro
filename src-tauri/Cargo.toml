@@ -1,0 +1,75 @@
+[package]
+name = "matepro"
+version = "0.0.4"
+edition = "2021"
+authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
+description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"
+license = "MIT"
+repository = "https://github.com/FrancescoZanti/MatePro"
+default-run = "matepro"
+
+[lib]
+name = "matepro_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "matepro"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-opener = "2"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client for Ollama
+reqwest = { version = "0.12", features = ["json"] }
+
+# Error handling
+anyhow = "1.0"
+
+# Utilities
+local-ip-address = "0.6"
+regex = "1.10"
+walkdir = "2.4"
+sysinfo = "0.30"
+url = "2.5"
+urlencoding = "2.1"
+uuid = { version = "1.0", features = ["v4"] }
+lazy_static = "1.4"
+chrono = { version = "0.4", features = ["serde"] }
+
+# File handling
+lopdf = "0.34"
+calamine = "0.26"
+
+# MCP SQL Server support
+tiberius = { version = "0.12", features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "winauth"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+rust_decimal = { version = "1", features = ["serde"] }
+
+# Charts
+plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "ttf", "image", "line_series"] }
+base64 = "0.22"
+
+# Async utilities
+futures-util = "0.3"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MatePro</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Setup Screen -->
+        <div id="setup-screen" class="screen">
+            <div class="setup-container">
+                <h1>🤖 MatePro</h1>
+                <p class="subtitle">Connettiti a un'istanza Ollama per iniziare</p>
+                
+                <div id="scanning-indicator" class="scanning hidden">
+                    <div class="spinner"></div>
+                    <span>Ricerca server Ollama in corso...</span>
+                </div>
+                
+                <div id="server-list" class="server-list hidden">
+                    <label>Server Ollama trovati:</label>
+                    <div id="servers"></div>
+                </div>
+                
+                <div class="input-group">
+                    <label>URL del server Ollama:</label>
+                    <input type="text" id="server-url" value="http://localhost:11434" placeholder="http://localhost:11434">
+                </div>
+                
+                <div class="button-group">
+                    <button id="connect-btn" class="primary">Connetti</button>
+                    <button id="rescan-btn" class="secondary">🔄 Ricarica</button>
+                </div>
+                
+                <div id="setup-error" class="error-message hidden"></div>
+            </div>
+        </div>
+
+        <!-- Loading Screen -->
+        <div id="loading-screen" class="screen hidden">
+            <div class="loading-container">
+                <div class="spinner large"></div>
+                <span id="loading-text">Caricamento modelli...</span>
+            </div>
+        </div>
+
+        <!-- Chat Screen -->
+        <div id="chat-screen" class="screen hidden">
+            <!-- Header -->
+            <header class="chat-header">
+                <div class="header-left">
+                    <span class="chat-icon">💬</span>
+                    <select id="model-selector">
+                        <option value="">Seleziona modello...</option>
+                    </select>
+                </div>
+                <div class="header-center">
+                    <label class="toggle-container">
+                        <input type="checkbox" id="agent-mode-toggle">
+                        <span class="toggle-label">🤖 Modalità Agente</span>
+                    </label>
+                    <span id="iteration-counter" class="iteration-counter hidden">(0/5)</span>
+                    <button id="sql-config-btn" class="icon-btn" title="Configura SQL Server">🗄️ SQL</button>
+                </div>
+                <div class="header-right">
+                    <button id="new-chat-btn" class="icon-btn" title="Nuova chat">⟲</button>
+                    <button id="disconnect-btn" class="icon-btn" title="Disconnetti">✕</button>
+                </div>
+            </header>
+
+            <!-- Messages Area -->
+            <main id="messages" class="messages-container">
+                <div class="empty-state">
+                    <p class="empty-title">Inizia una conversazione</p>
+                    <p class="empty-subtitle">Scrivi un messaggio per iniziare</p>
+                </div>
+            </main>
+
+            <!-- Error Banner -->
+            <div id="error-banner" class="error-banner hidden">
+                <span id="error-text"></span>
+                <button id="close-error" class="close-btn">✕</button>
+            </div>
+
+            <!-- Input Area -->
+            <footer class="input-area">
+                <div id="attached-files" class="attached-files hidden"></div>
+                <div class="input-row">
+                    <textarea id="message-input" placeholder="Scrivi un messaggio..." rows="3"></textarea>
+                    <div class="input-buttons">
+                        <button id="attach-btn" class="attach-btn" title="Allega file">📎</button>
+                        <button id="send-btn" class="send-btn" disabled title="Invia (Ctrl+Enter)">▶</button>
+                    </div>
+                </div>
+                <p class="input-hint">Premi Ctrl+Enter per inviare</p>
+            </footer>
+        </div>
+
+        <!-- SQL Config Modal -->
+        <div id="sql-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🗄️ Configurazione SQL Server</h2>
+                    <button id="close-sql-modal" class="close-btn">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Server:</label>
+                        <input type="text" id="sql-server" placeholder="localhost, 192.168.1.10, server.domain.com">
+                        <small>Nome o IP del server SQL</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Database:</label>
+                        <input type="text" id="sql-database" placeholder="Nome del database">
+                    </div>
+                    <div class="form-group">
+                        <label>Autenticazione:</label>
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="sql-auth" value="windows" checked>
+                                🪟 Windows (Integrated)
+                            </label>
+                            <label>
+                                <input type="radio" name="sql-auth" value="sql">
+                                🔑 SQL Authentication
+                            </label>
+                        </div>
+                    </div>
+                    <div id="sql-credentials" class="form-group hidden">
+                        <div class="form-group">
+                            <label>Username:</label>
+                            <input type="text" id="sql-username">
+                        </div>
+                        <div class="form-group">
+                            <label>Password:</label>
+                            <input type="password" id="sql-password">
+                        </div>
+                    </div>
+                    <div id="sql-status" class="sql-status hidden"></div>
+                    <div class="warning-box">
+                        🔒 SOLO LETTURA: Le query sono limitate a SELECT. UPDATE, INSERT, DELETE non sono permesse.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="test-sql-btn" class="primary">🔌 Test Connessione</button>
+                    <button id="close-sql-btn" class="secondary">Chiudi</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirmation Modal -->
+        <div id="confirm-modal" class="modal hidden">
+            <div class="modal-content small">
+                <div class="modal-header">
+                    <h2>⚠️ Conferma Operazione</h2>
+                </div>
+                <div class="modal-body">
+                    <p>L'agente vuole eseguire un'operazione potenzialmente pericolosa:</p>
+                    <div id="confirm-details" class="confirm-details"></div>
+                </div>
+                <div class="modal-footer">
+                    <button id="confirm-allow" class="success">✓ Consenti</button>
+                    <button id="confirm-cancel" class="danger">✕ Annulla</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="file-input" accept=".pdf,.xlsx,.xls,.ods,.txt,.md,.csv" hidden>
+    
+    <script src="app.js"></script>
+</body>
+</html>
