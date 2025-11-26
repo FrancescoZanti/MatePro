@@ -51,7 +51,7 @@ Client Ollama moderno con interfaccia grafica elegante per chattare con modelli 
 sudo apt-get install -y pkg-config build-essential \
   libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
   libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-  libsoup3.0-dev
+  libsoup-3.0-dev
 ```
 
 ## Installazione
