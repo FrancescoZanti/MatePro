@@ -3376,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "matepro-legacy"
-version = "0.0.4"
+version = "0.0.5-alpha"
 dependencies = [
  "android-activity",
  "android_logger",

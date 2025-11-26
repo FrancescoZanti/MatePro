@@ -13,7 +13,44 @@ permissions:
 
 jobs:
 
+  create-tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.create_tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get version from Cargo.toml
+        id: get_version
+        run: |
+          VERSION=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d '"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+      
+      - name: Create and push tag
+        id: create_tag
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          TAG="v$VERSION-build.${{ github.run_number }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Creating tag: $TAG"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Delete tag if exists (both local and remote)
+          git tag -d "$TAG" 2>/dev/null || true
+          git push origin ":refs/tags/$TAG" 2>/dev/null || true
+          
+          # Create and push new tag
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
   build-linux:
+    needs: create-tag
     name: Build Linux
     runs-on: ubuntu-latest
     steps:
@@ -32,13 +69,13 @@ jobs:
           override: true
       
       - name: Build release
-        run: cargo build --release
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
       
       - name: Create tarball
         run: |
-          cd target/release
+          cd src-tauri/target/release
           tar -czf matepro-linux-x64.tar.gz matepro
-          mv matepro-linux-x64.tar.gz ../../
+          mv matepro-linux-x64.tar.gz ../../../
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
@@ -48,6 +85,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-deb:
+    needs: create-tag
     name: Build DEB Package
     runs-on: ubuntu-latest
     steps:
@@ -69,14 +107,14 @@ jobs:
         run: cargo install cargo-deb
       
       - name: Build DEB package
-        run: cargo deb
+        run: cargo deb --manifest-path src-tauri/Cargo.toml
       
       - name: Rename DEB file
         run: |
-          cd target/debian
+          cd src-tauri/target/debian
           DEB_FILE=$(ls *.deb)
           mv "$DEB_FILE" matepro-linux-amd64.deb
-          mv matepro-linux-amd64.deb ../../
+          mv matepro-linux-amd64.deb ../../../
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
@@ -86,6 +124,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-rpm:
+    needs: create-tag
     name: Build RPM Package
     runs-on: ubuntu-latest
     steps:
@@ -107,17 +146,17 @@ jobs:
         run: cargo install cargo-generate-rpm
       
       - name: Build release
-        run: cargo build --release
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
       
       - name: Generate RPM
-        run: cargo generate-rpm
+        run: cargo generate-rpm --manifest-path src-tauri/Cargo.toml
       
       - name: Rename RPM file
         run: |
-          cd target/generate-rpm
+          cd src-tauri/target/generate-rpm
           RPM_FILE=$(ls *.rpm)
           mv "$RPM_FILE" matepro-linux-x86_64.rpm
-          mv matepro-linux-x86_64.rpm ../../
+          mv matepro-linux-x86_64.rpm ../../../
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
@@ -127,6 +166,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
+    needs: create-tag
     name: Build Windows
     runs-on: windows-latest
     steps:
@@ -186,6 +226,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos:
+    needs: create-tag
     name: Build macOS
     runs-on: macos-latest
     steps:
@@ -204,25 +245,25 @@ jobs:
           rustup target add aarch64-apple-darwin
       
       - name: Build release (x86_64)
-        run: cargo build --release --target x86_64-apple-darwin
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml --target x86_64-apple-darwin
       
       - name: Build release (aarch64)
-        run: cargo build --release --target aarch64-apple-darwin
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
       
       - name: Create universal binary
         run: |
-          mkdir -p target/universal/release
+          mkdir -p src-tauri/target/universal/release
           lipo -create \
-            target/x86_64-apple-darwin/release/matepro \
-            target/aarch64-apple-darwin/release/matepro \
-            -output target/universal/release/matepro
+            src-tauri/target/x86_64-apple-darwin/release/matepro \
+            src-tauri/target/aarch64-apple-darwin/release/matepro \
+            -output src-tauri/target/universal/release/matepro
       
       - name: Create app bundle
         run: |
           mkdir -p MatePro.app/Contents/MacOS
           mkdir -p MatePro.app/Contents/Resources
           
-          cp target/universal/release/matepro MatePro.app/Contents/MacOS/
+          cp src-tauri/target/universal/release/matepro MatePro.app/Contents/MacOS/
           
           cat > MatePro.app/Contents/Info.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -270,7 +311,7 @@ jobs:
 
   update-release-notes:
     name: Update Release Notes
-    needs: [build-linux, build-deb, build-rpm, build-windows, build-macos]
+    needs: [create-tag, build-linux, build-deb, build-rpm, build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
