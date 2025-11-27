@@ -173,6 +173,29 @@ jobs:
           cd src-tauri
           cargo generate-rpm
       
+      - name: Create source RPM for COPR
+        run: |
+          set -euo pipefail
+          cd src-tauri
+
+          PACKAGE=$(grep -m1 '^name = ' Cargo.toml | cut -d '"' -f2)
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d '"' -f2)
+          SPEC_FILE=$(find target/generate-rpm -maxdepth 1 -name '*.spec' | head -n1)
+
+          if [ -z "$SPEC_FILE" ] || [ ! -f "$SPEC_FILE" ]; then
+            echo "RPM spec file not found" >&2
+            exit 1
+          fi
+
+          RPMBUILD_DIR="$PWD/rpmbuild"
+          rm -rf "$RPMBUILD_DIR"
+          mkdir -p "$RPMBUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
+
+          git -C .. archive --format=tar --prefix="${PACKAGE}-${VERSION}/" HEAD:src-tauri | gzip > "$RPMBUILD_DIR/SOURCES/${PACKAGE}-${VERSION}.tar.gz"
+          cp "$SPEC_FILE" "$RPMBUILD_DIR/SPECS/"
+
+          rpmbuild --define "_topdir $RPMBUILD_DIR" -bs "$RPMBUILD_DIR/SPECS/$(basename "$SPEC_FILE")"
+
       - name: Collect RPM artifacts
         run: |
           set -euo pipefail
@@ -182,14 +205,18 @@ jobs:
           echo "Found binary RPM: $BIN_RPM"
           cp "$BIN_RPM" "$GITHUB_WORKSPACE/matepro-linux-x86_64.rpm"
 
-          if ! ls *.src.rpm >/dev/null 2>&1; then
+          if ls *.src.rpm >/dev/null 2>&1; then
+            SRPM=$(ls *.src.rpm | head -n1)
+            echo "Found source RPM in generate-rpm directory: $SRPM"
+            cp "$SRPM" "$GITHUB_WORKSPACE/matepro.src.rpm"
+          elif ls ../rpmbuild/SRPMS/*.src.rpm >/dev/null 2>&1; then
+            SRPM=$(ls ../rpmbuild/SRPMS/*.src.rpm | head -n1)
+            echo "Found source RPM in rpmbuild output: $SRPM"
+            cp "$SRPM" "$GITHUB_WORKSPACE/matepro.src.rpm"
+          else
             echo "Source RPM not found" >&2
             exit 1
           fi
-
-          SRPM=$(ls *.src.rpm | head -n1)
-          echo "Found source RPM: $SRPM"
-          cp "$SRPM" "$GITHUB_WORKSPACE/matepro.src.rpm"
 
       - name: Upload RPM artifacts for COPR
         uses: actions/upload-artifact@v4
