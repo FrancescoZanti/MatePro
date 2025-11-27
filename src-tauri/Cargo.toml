@@ -1,6 +1,6 @@
 [package]
 name = "matepro"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2021"
 authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
 description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"
@@ -60,6 +60,7 @@ tiberius = { version = "0.12", default-features = false, features = ["sql-browse
 tokio-util = { version = "0.7", features = ["compat"] }
 rust_decimal = { version = "1", features = ["serde"] }
 semver = "1"
+whoami = "1.5"
 
 # Charts
 plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "ttf", "image", "line_series"] }

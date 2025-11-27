@@ -81,6 +81,21 @@ body {
     margin-bottom: 2rem;
 }
 
+.greeting-banner {
+    max-width: 450px;
+    width: 100%;
+    margin-bottom: 1.5rem;
+    padding: 0.85rem 1.1rem;
+    background: var(--bg-secondary);
+    border: 1px solid transparent;
+    border-radius: 12px;
+    box-shadow: 0 16px 32px var(--shadow);
+    color: var(--text-primary);
+    text-align: center;
+    font-size: 1rem;
+    line-height: 1.4;
+}
+
 .scanning {
     display: flex;
     align-items: center;

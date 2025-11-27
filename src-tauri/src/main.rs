@@ -100,6 +100,13 @@ pub struct ModelInfoResponse {
     pub category: String,
 }
 
+#[derive(Debug, Serialize)]
+struct UserProfile {
+    username: String,
+    display_name: Option<String>,
+    primary_language: Option<String>,
+}
+
 // ============ STATE ============
 
 struct AppState {
@@ -762,6 +769,35 @@ fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+#[tauri::command]
+fn get_user_profile() -> UserProfile {
+    let username = whoami::username();
+    let realname = whoami::realname();
+    let trimmed_realname = realname.trim();
+    let display_name = if trimmed_realname.is_empty() || trimmed_realname == username {
+        None
+    } else {
+        Some(trimmed_realname.to_string())
+    };
+
+    let primary_language = ["LANG", "LC_ALL", "LC_MESSAGES"].iter().find_map(|key| {
+        std::env::var(key).ok().and_then(|value| {
+            let lang = value.split('.').next().unwrap_or("").trim().to_string();
+            if lang.is_empty() {
+                None
+            } else {
+                Some(lang)
+            }
+        })
+    });
+
+    UserProfile {
+        username,
+        display_name,
+        primary_language,
+    }
+}
+
 // ============ MAIN ============
 
 fn main() {
@@ -788,6 +824,7 @@ fn main() {
             sql_disconnect,
             get_timestamp_cmd,
             get_app_version,
+            get_user_profile,
             check_for_updates,
             download_and_install_update,
         ])

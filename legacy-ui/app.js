@@ -17,6 +17,8 @@ const state = {
     systemPromptAdded: false,
     pendingToolCalls: [],
     isProcessing: false,
+    greetingMessage: null,
+    greetingShown: false,
 };
 
 // ============ DOM ELEMENTS ============
@@ -36,6 +38,7 @@ const elements = {
     rescanBtn: document.getElementById('rescan-btn'),
     setupError: document.getElementById('setup-error'),
     loadingText: document.getElementById('loading-text'),
+    greetingBanner: document.getElementById('greeting-banner'),
     
     // Chat
     modelSelector: document.getElementById('model-selector'),
@@ -75,6 +78,45 @@ const elements = {
     versionIndicator: document.getElementById('version-indicator'),
 };
 
+const greetingTemplates = {
+    en: (name) => `Hello ${name}! Welcome to MatePro.`,
+    it: (name) => `Ciao ${name}! Benvenuto su MatePro.`,
+    es: (name) => `Hola ${name}! Bienvenido a MatePro.`,
+    fr: (name) => `Bonjour ${name} ! Bienvenue sur MatePro.`,
+    de: (name) => `Hallo ${name}! Willkommen bei MatePro.`,
+    pt: (name) => `Olá ${name}! Bem-vindo ao MatePro.`,
+    nl: (name) => `Hallo ${name}! Welkom bij MatePro.`,
+    sv: (name) => `Hej ${name}! Välkommen till MatePro.`,
+    da: (name) => `Hej ${name}! Velkommen til MatePro.`,
+    fi: (name) => `Hei ${name}! Tervetuloa MateProon.`,
+    pl: (name) => `Cześć ${name}! Witamy w MatePro.`,
+    tr: (name) => `Merhaba ${name}! MatePro'ya hoş geldin.`,
+    ro: (name) => `Salut ${name}! Bine ai venit la MatePro.`,
+    cs: (name) => `Ahoj ${name}! Vítej v MatePro.`,
+    sk: (name) => `Ahoj ${name}! Vitaj v MatePro.`,
+    hu: (name) => `Szia ${name}! Üdv a MateProban.`,
+    el: (name) => `Γεια σου ${name}! Καλώς ήρθες στο MatePro.`,
+    ru: (name) => `Здравствуйте, ${name}! Добро пожаловать в MatePro.`,
+    uk: (name) => `Привіт ${name}! Ласкаво просимо до MatePro.`,
+    zh: (name) => `你好，${name}！欢迎使用 MatePro。`,
+    ja: (name) => `こんにちは、${name}さん！MateProへようこそ。`,
+    ko: (name) => `안녕하세요, ${name}님! MatePro에 오신 것을 환영합니다.`,
+};
+
+function normalizeLanguageCode(tag) {
+    if (!tag || typeof tag !== 'string') {
+        return null;
+    }
+
+    const normalized = tag.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+
+    const parts = normalized.split(/[-_]/);
+    return parts[0] || null;
+}
+
 // ============ UTILITIES ============
 
 function showScreen(screenId) {
@@ -101,7 +143,8 @@ function hideError() {
 
 function getTimestamp() {
     const now = new Date();
-    return now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const locale = (typeof navigator !== 'undefined' && navigator.language) ? navigator.language : 'it-IT';
+    return now.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 function escapeHtml(text) {
@@ -143,6 +186,66 @@ async function loadVersionIndicator() {
         elements.versionIndicator.classList.remove('hidden');
     } catch (error) {
         console.warn('Impossibile recuperare la versione dell\'applicazione:', error);
+    }
+}
+
+async function loadGreeting() {
+    if (!elements.greetingBanner) {
+        return;
+    }
+
+    try {
+        const profile = await invoke('get_user_profile');
+        const candidates = [];
+
+        if (profile?.primary_language) {
+            candidates.push(profile.primary_language);
+        }
+
+        if (typeof navigator !== 'undefined') {
+            if (navigator.language) {
+                candidates.push(navigator.language);
+            }
+
+            if (Array.isArray(navigator.languages)) {
+                candidates.push(...navigator.languages);
+            }
+        }
+
+        let languageCode = null;
+        for (const candidate of candidates) {
+            const normalized = normalizeLanguageCode(candidate);
+            if (!normalized) {
+                continue;
+            }
+
+            if (!languageCode) {
+                languageCode = normalized;
+            }
+
+            if (greetingTemplates[normalized]) {
+                languageCode = normalized;
+                break;
+            }
+        }
+
+        if (!languageCode) {
+            languageCode = 'en';
+        }
+
+        const template = greetingTemplates[languageCode] || greetingTemplates.en;
+        const rawName = (profile?.display_name || profile?.username || '').trim();
+        const fallbackName = rawName || 'MatePro user';
+        const safeName = fallbackName.length > 32 ? `${fallbackName.slice(0, 29)}...` : fallbackName;
+        const message = template(safeName);
+
+        elements.greetingBanner.textContent = message;
+        elements.greetingBanner.classList.remove('hidden');
+
+        state.greetingMessage = message;
+        state.greetingShown = false;
+    } catch (error) {
+        console.warn('Impossibile caricare il saluto personalizzato:', error);
     }
 }
 
@@ -289,6 +392,11 @@ async function loadModels() {
         state.selectedModel = models[0].name;
         showScreen('chat-screen');
         elements.connectBtn.disabled = false;
+
+        if (state.greetingMessage && !state.greetingShown) {
+            addMessage('system', state.greetingMessage, getTimestamp());
+            state.greetingShown = true;
+        }
         
     } catch (error) {
         showScreen('setup-screen');
@@ -775,6 +883,7 @@ function disconnect() {
     state.attachedFiles = [];
     state.systemPromptAdded = false;
     state.currentIteration = 0;
+    state.greetingShown = false;
     
     showScreen('setup-screen');
     elements.setupError.classList.add('hidden');
@@ -844,6 +953,7 @@ function initEventListeners() {
 async function init() {
     initEventListeners();
     await loadVersionIndicator();
+    await loadGreeting();
     checkForUpdates();
     await scanNetwork();
 }
