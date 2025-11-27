@@ -230,12 +230,13 @@ jobs:
           }
           Copy-Item $installer.FullName "matepro-windows-installer.exe" -Force
 
-          $binDir = Join-Path $bundleRoot "bin"
-          $binary = Get-ChildItem $binDir -Filter "*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if (-not $binary) {
+          $binaryPath = Join-Path "target" "x86_64-pc-windows-msvc"
+          $binaryPath = Join-Path $binaryPath "release"
+          $binaryPath = Join-Path $binaryPath "matepro.exe"
+          if (-not (Test-Path $binaryPath)) {
             throw "Bundled executable not found"
           }
-          Copy-Item $binary.FullName "matepro-windows-x64.exe" -Force
+          Copy-Item $binaryPath "matepro-windows-x64.exe" -Force
 
           if (Test-Path "matepro-windows-x64.zip") {
             Remove-Item "matepro-windows-x64.zip"
