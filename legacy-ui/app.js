@@ -2,6 +2,7 @@
 
 const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI_PLUGIN_OPENER__;
+const { appWindow } = window.__TAURI__.window;
 
 // ============ STATE ============
 
@@ -128,6 +129,57 @@ function formatMessage(content) {
 
 function scrollToBottom() {
     elements.messages.scrollTop = elements.messages.scrollHeight;
+}
+
+// Check GitHub releases for Windows updates and prompt the user when available.
+async function checkForUpdates() {
+    try {
+        const result = await invoke('check_for_updates');
+        if (!result || !result.status) return;
+
+        if (result.status === 'unsupported' || result.status === 'up_to_date') {
+            return;
+        }
+
+        if (result.status === 'error') {
+            console.warn('Update check error:', result.message);
+            return;
+        }
+
+        if (result.status === 'update_available') {
+            const latestVersion = result.latest_version;
+            const currentVersion = result.current_version;
+            const downloadUrl = result.download_url;
+
+            if (!downloadUrl) {
+                console.warn('Nessun URL di download disponibile per l\'aggiornamento.');
+                return;
+            }
+
+            const confirmUpdate = window.confirm(
+                `È disponibile una nuova versione (${latestVersion}).\nVersione corrente: ${currentVersion}.\nVuoi installare l'aggiornamento ora?`
+            );
+
+            if (!confirmUpdate) {
+                return;
+            }
+
+            try {
+                await invoke('download_and_install_update', { url: downloadUrl, version: latestVersion });
+                window.alert('Installazione avviata. L\'applicazione verrà chiusa per completare l\'aggiornamento.');
+
+                if (appWindow && typeof appWindow.close === 'function') {
+                    await appWindow.close();
+                } else {
+                    window.close();
+                }
+            } catch (error) {
+                showError(`Errore durante l'installazione dell'aggiornamento: ${error}`);
+            }
+        }
+    } catch (error) {
+        console.warn('Controllo aggiornamenti non riuscito:', error);
+    }
 }
 
 // ============ NETWORK SCAN ============
@@ -713,6 +765,7 @@ function initEventListeners() {
 
 async function init() {
     initEventListeners();
+    checkForUpdates();
     await scanNetwork();
 }
 

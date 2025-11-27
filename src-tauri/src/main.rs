@@ -19,6 +19,33 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+use semver::Version;
+#[cfg(target_os = "windows")]
+use std::time::Duration;
+#[cfg(target_os = "windows")]
+use tokio::fs::File;
+#[cfg(target_os = "windows")]
+use tokio::io::AsyncWriteExt;
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum UpdateStatus {
+    UpToDate {
+        current_version: String,
+    },
+    UpdateAvailable {
+        current_version: String,
+        latest_version: String,
+        download_url: String,
+        asset_name: String,
+    },
+    Unsupported,
+    Error {
+        message: String,
+    },
+}
+
 // ============ TYPES ============
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -93,6 +120,145 @@ impl Default for AppState {
             last_sql_connection_id: Mutex::new(None),
         }
     }
+}
+
+// ============ UPDATE SUPPORT ============
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Deserialize)]
+struct GitHubAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    assets: Vec<GitHubAsset>,
+}
+
+#[cfg(target_os = "windows")]
+async fn latest_windows_release() -> Result<UpdateStatus, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent("MatePro-Updater")
+        .build()
+        .map_err(|e| format!("Impossibile creare client HTTP: {}", e))?;
+
+    let release: GitHubRelease = client
+        .get("https://api.github.com/repos/FrancescoZanti/MatePro/releases/latest")
+        .send()
+        .await
+        .map_err(|e| format!("Errore richiesta GitHub: {}", e))?
+        .error_for_status()
+        .map_err(|e| format!("Risposta GitHub non valida: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("Errore parsing risposta GitHub: {}", e))?;
+
+    let latest_version = release.tag_name.trim_start_matches('v');
+    let current_version = env!("CARGO_PKG_VERSION");
+
+    let latest_semver = Version::parse(latest_version)
+        .map_err(|e| format!("Versione release non valida '{}': {}", latest_version, e))?;
+    let current_semver = Version::parse(current_version)
+        .map_err(|e| format!("Versione corrente non valida '{}': {}", current_version, e))?;
+
+    if latest_semver <= current_semver {
+        return Ok(UpdateStatus::UpToDate {
+            current_version: current_version.to_string(),
+        });
+    }
+
+    let asset = release
+        .assets
+        .into_iter()
+        .find(|asset| asset.name.contains("windows") && asset.name.ends_with(".exe"))
+        .ok_or_else(|| {
+            format!(
+                "Nessun installer Windows trovato per la release {}",
+                latest_version
+            )
+        })?;
+
+    Ok(UpdateStatus::UpdateAvailable {
+        current_version: current_version.to_string(),
+        latest_version: latest_semver.to_string(),
+        download_url: asset.browser_download_url,
+        asset_name: asset.name,
+    })
+}
+
+#[cfg(target_os = "windows")]
+async fn download_installer(url: &str, version: &str) -> Result<std::path::PathBuf, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .user_agent("MatePro-Updater")
+        .build()
+        .map_err(|e| format!("Impossibile creare client HTTP: {}", e))?;
+
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Errore download installer: {}", e))?
+        .error_for_status()
+        .map_err(|e| format!("Download fallito: {}", e))?;
+
+    let mut installer_path = std::env::temp_dir();
+    installer_path.push(format!("matepro-update-{}-installer.exe", version));
+
+    let mut file = File::create(&installer_path)
+        .await
+        .map_err(|e| format!("Impossibile creare file temporaneo: {}", e))?;
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Errore lettura dati installer: {}", e))?;
+
+    file.write_all(&bytes)
+        .await
+        .map_err(|e| format!("Impossibile salvare installer: {}", e))?;
+    file.flush()
+        .await
+        .map_err(|e| format!("Impossibile completare scrittura installer: {}", e))?;
+
+    Ok(installer_path)
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn check_for_updates() -> Result<UpdateStatus, String> {
+    match latest_windows_release().await {
+        Ok(status) => Ok(status),
+        Err(message) => Ok(UpdateStatus::Error { message }),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+async fn check_for_updates() -> Result<UpdateStatus, String> {
+    Ok(UpdateStatus::Unsupported)
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+async fn download_and_install_update(url: String, version: String) -> Result<(), String> {
+    let installer_path = download_installer(&url, &version).await?;
+
+    std::process::Command::new(&installer_path)
+        .spawn()
+        .map_err(|e| format!("Impossibile avviare l'installer: {}", e))?;
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+async fn download_and_install_update(_url: String, _version: String) -> Result<(), String> {
+    Err("Gli aggiornamenti automatici sono disponibili solo su Windows".to_string())
 }
 
 // ============ HELPER FUNCTIONS ============
@@ -610,6 +776,8 @@ fn main() {
             sql_describe_table,
             sql_disconnect,
             get_timestamp_cmd,
+            check_for_updates,
+            download_and_install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

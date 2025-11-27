@@ -57,6 +57,7 @@ calamine = "0.26"
 tiberius = { version = "0.12", default-features = false, features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "tds73", "rustls"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 rust_decimal = { version = "1", features = ["serde"] }
+semver = "1"
 
 # Charts
 plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "ttf", "image", "line_series"] }
