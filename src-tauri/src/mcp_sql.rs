@@ -41,6 +41,7 @@ pub struct SqlConnection {
     pub trust_server_certificate: bool,
 }
 
+#[derive(Clone)]
 pub struct SqlConnectionManager {
     connections: Arc<Mutex<HashMap<String, SqlConnection>>>,
 }

@@ -107,17 +107,22 @@ struct AppState {
     client: reqwest::Client,
     agent_system: Mutex<AgentSystem>,
     sql_manager: mcp_sql::SqlConnectionManager,
-    last_sql_connection_id: Mutex<Option<String>>,
+    last_sql_connection_id: Arc<Mutex<Option<String>>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
+        let sql_manager = mcp_sql::SqlConnectionManager::new();
+        let last_sql_connection_id = Arc::new(Mutex::new(None));
+        let agent =
+            AgentSystem::with_shared_state(sql_manager.clone(), last_sql_connection_id.clone());
+
         Self {
             ollama_url: Mutex::new("http://localhost:11434".to_string()),
             client: reqwest::Client::new(),
-            agent_system: Mutex::new(AgentSystem::new()),
-            sql_manager: mcp_sql::SqlConnectionManager::new(),
-            last_sql_connection_id: Mutex::new(None),
+            agent_system: Mutex::new(agent),
+            sql_manager,
+            last_sql_connection_id,
         }
     }
 }
