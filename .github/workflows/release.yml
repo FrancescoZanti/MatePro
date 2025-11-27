@@ -175,10 +175,9 @@ jobs:
       
       - name: Rename RPM file
         run: |
-          cd target/generate-rpm
+          cd src-tauri/target/generate-rpm
           RPM_FILE=$(ls *.rpm)
-          mv "$RPM_FILE" matepro-linux-x86_64.rpm
-          mv matepro-linux-x86_64.rpm ../../
+          mv "$RPM_FILE" "$GITHUB_WORKSPACE/matepro-linux-x86_64.rpm"
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
