@@ -173,11 +173,32 @@ jobs:
           cd src-tauri
           cargo generate-rpm
       
-      - name: Rename RPM file
+      - name: Collect RPM artifacts
         run: |
+          set -euo pipefail
           cd src-tauri/target/generate-rpm
-          RPM_FILE=$(ls *.rpm)
-          mv "$RPM_FILE" "$GITHUB_WORKSPACE/matepro-linux-x86_64.rpm"
+
+          BIN_RPM=$(ls *.x86_64.rpm | head -n1)
+          echo "Found binary RPM: $BIN_RPM"
+          cp "$BIN_RPM" "$GITHUB_WORKSPACE/matepro-linux-x86_64.rpm"
+
+          if ! ls *.src.rpm >/dev/null 2>&1; then
+            echo "Source RPM not found" >&2
+            exit 1
+          fi
+
+          SRPM=$(ls *.src.rpm | head -n1)
+          echo "Found source RPM: $SRPM"
+          cp "$SRPM" "$GITHUB_WORKSPACE/matepro.src.rpm"
+
+      - name: Upload RPM artifacts for COPR
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-artifacts
+          path: |
+            matepro-linux-x86_64.rpm
+            matepro.src.rpm
+          retention-days: 7
       
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
@@ -186,6 +207,48 @@ jobs:
           tag_name: ${{ needs.create-tag.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-copr:
+    name: Publish to COPR
+    needs: build-rpm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download RPM artifacts
+        if: ${{ secrets.COPR_CONFIG != '' && secrets.COPR_PROJECT != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: rpm-artifacts
+          path: artifacts
+
+      - name: Install copr-cli
+        if: ${{ secrets.COPR_CONFIG != '' && secrets.COPR_PROJECT != '' }}
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install copr-cli
+
+      - name: Configure copr-cli
+        if: ${{ secrets.COPR_CONFIG != '' && secrets.COPR_PROJECT != '' }}
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          mkdir -p ~/.config
+          printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
+          chmod 600 ~/.config/copr
+
+      - name: Submit build to COPR
+        if: ${{ secrets.COPR_CONFIG != '' && secrets.COPR_PROJECT != '' }}
+        env:
+          COPR_PROJECT: ${{ secrets.COPR_PROJECT }}
+        run: |
+          set -euo pipefail
+          SRPM=$(ls artifacts/*.src.rpm | head -n1)
+          echo "Submitting $SRPM to COPR project"
+          copr-cli build "$COPR_PROJECT" "$SRPM"
+
+      - name: Skip publication (missing secrets)
+        if: ${{ secrets.COPR_CONFIG == '' || secrets.COPR_PROJECT == '' }}
+        run: |
+          echo "COPR secrets not configured; skipping publication."
 
   build-windows:
     needs: create-tag
