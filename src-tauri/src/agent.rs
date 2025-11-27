@@ -13,6 +13,7 @@ use serde_json::json;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::future::Future;
 use std::io::{BufReader, ErrorKind, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -1033,7 +1034,7 @@ impl AgentSystem {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Parametro 'auth_method' mancante (usa 'windows' o 'sql')"))?;
 
-        let trust_server_certificate = params
+        let requested_trust = params
             .get("trust_server_certificate")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
@@ -1043,33 +1044,35 @@ impl AgentSystem {
         let mut stored_username = None;
         let mut stored_password = None;
 
-        let client = if auth_method.eq_ignore_ascii_case("windows") {
-            mcp_sql::connect_windows_auth(server, database, trust_server_certificate).await?
-        } else if auth_method.eq_ignore_ascii_case("sql") {
-            let username = params
-                .get("username")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("Parametro 'username' richiesto per SQL auth"))?;
+        let (client, effective_trust, auto_trust_applied) =
+            if auth_method.eq_ignore_ascii_case("windows") {
+                connect_with_optional_trust(
+                    |trust| mcp_sql::connect_windows_auth(server, database, trust),
+                    requested_trust,
+                )
+                .await?
+            } else if auth_method.eq_ignore_ascii_case("sql") {
+                let username = params
+                    .get("username")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow!("Parametro 'username' richiesto per SQL auth"))?;
 
-            let password = params
-                .get("password")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("Parametro 'password' richiesto per SQL auth"))?;
+                let password = params
+                    .get("password")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow!("Parametro 'password' richiesto per SQL auth"))?;
 
-            stored_username = Some(username.to_string());
-            stored_password = Some(password.to_string());
+                stored_username = Some(username.to_string());
+                stored_password = Some(password.to_string());
 
-            mcp_sql::connect_sql_auth(
-                server,
-                database,
-                username,
-                password,
-                trust_server_certificate,
-            )
-            .await?
-        } else {
-            return Err(anyhow!("auth_method non valido: usa 'windows' o 'sql'"));
-        };
+                connect_with_optional_trust(
+                    |trust| mcp_sql::connect_sql_auth(server, database, username, password, trust),
+                    requested_trust,
+                )
+                .await?
+            } else {
+                return Err(anyhow!("auth_method non valido: usa 'windows' o 'sql'"));
+            };
 
         drop(client);
 
@@ -1080,7 +1083,7 @@ impl AgentSystem {
             auth_type: auth_method.to_string(),
             username: stored_username,
             password: stored_password,
-            trust_server_certificate,
+            trust_server_certificate: effective_trust,
         };
 
         self.sql_manager.add_connection(conn_info);
@@ -1090,14 +1093,22 @@ impl AgentSystem {
             *last_conn = Some(connection_id.clone());
         }
 
-        Ok(format!(
+        let mut response = format!(
             "✅ Connessione riuscita\nConnection ID: {}\nServer: {}\nDatabase: {}\nAutenticazione: {}\nTrust certificato TLS: {}",
             connection_id,
             server,
             database,
             auth_method,
-            if trust_server_certificate { "disabilitata" } else { "attiva" }
-        ))
+            if effective_trust { "disabilitata" } else { "attiva" }
+        );
+
+        if auto_trust_applied && !requested_trust {
+            response.push_str(
+                "\n⚠️ Il certificato TLS presentato dal server non è attendibile. La connessione è stata completata accettando il certificato per proseguire.",
+            );
+        }
+
+        Ok(response)
     }
 
     async fn execute_sql_query(
@@ -1321,6 +1332,47 @@ impl AgentSystem {
             }
         }
     }
+}
+
+async fn connect_with_optional_trust<F, Fut>(
+    mut connect_fn: F,
+    requested_trust: bool,
+) -> Result<(mcp_sql::SqlClient, bool, bool)>
+where
+    F: FnMut(bool) -> Fut,
+    Fut: Future<Output = Result<mcp_sql::SqlClient>>,
+{
+    let mut trust = requested_trust;
+    let mut fallback_used = false;
+
+    match connect_fn(trust).await {
+        Ok(client) => Ok((client, trust, fallback_used)),
+        Err(err) => {
+            if !trust && is_certificate_error(&err) {
+                let first_err_msg = err.to_string();
+                trust = true;
+                fallback_used = true;
+                match connect_fn(trust).await {
+                    Ok(client) => Ok((client, trust, fallback_used)),
+                    Err(second_err) => Err(anyhow!(
+                        "Connessione TLS fallita ({}). Ritentativo accettando il certificato non riuscito: {}",
+                        first_err_msg,
+                        second_err
+                    )),
+                }
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
+fn is_certificate_error(error: &anyhow::Error) -> bool {
+    let message = error.to_string().to_lowercase();
+    message.contains("certificate")
+        || message.contains("unknownissuer")
+        || message.contains("unknown issuer")
+        || message.contains("tls")
 }
 
 #[derive(Debug, Clone)]

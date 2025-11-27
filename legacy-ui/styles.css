@@ -682,6 +682,20 @@ button:disabled {
     flex: 1;
 }
 
+.app-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.version-indicator {
+    padding: 0.1rem 0.45rem;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font-size: 0.75rem;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
     width: 8px;

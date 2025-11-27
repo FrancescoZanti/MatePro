@@ -72,6 +72,7 @@ const elements = {
     confirmDetails: document.getElementById('confirm-details'),
     confirmAllow: document.getElementById('confirm-allow'),
     confirmCancel: document.getElementById('confirm-cancel'),
+    versionIndicator: document.getElementById('version-indicator'),
 };
 
 // ============ UTILITIES ============
@@ -129,6 +130,20 @@ function formatMessage(content) {
 
 function scrollToBottom() {
     elements.messages.scrollTop = elements.messages.scrollHeight;
+}
+
+async function loadVersionIndicator() {
+    if (!elements.versionIndicator) return;
+
+    try {
+        const version = await invoke('get_app_version');
+        if (!version) return;
+
+        elements.versionIndicator.textContent = `v${version}`;
+        elements.versionIndicator.classList.remove('hidden');
+    } catch (error) {
+        console.warn('Impossibile recuperare la versione dell\'applicazione:', error);
+    }
 }
 
 // Check GitHub releases for Windows updates and prompt the user when available.
@@ -765,6 +780,7 @@ function initEventListeners() {
 
 async function init() {
     initEventListeners();
+    await loadVersionIndicator();
     checkForUpdates();
     await scanNetwork();
 }

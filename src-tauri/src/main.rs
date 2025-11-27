@@ -757,6 +757,11 @@ fn get_timestamp_cmd() -> String {
     get_timestamp()
 }
 
+#[tauri::command]
+fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 // ============ MAIN ============
 
 fn main() {
@@ -781,6 +786,7 @@ fn main() {
             sql_describe_table,
             sql_disconnect,
             get_timestamp_cmd,
+            get_app_version,
             check_for_updates,
             download_and_install_update,
         ])
