@@ -212,33 +212,43 @@ jobs:
     name: Publish to COPR
     needs: build-rpm
     runs-on: ubuntu-latest
+    env:
+      COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+      COPR_PROJECT: ${{ secrets.COPR_PROJECT }}
     steps:
+      - name: Check COPR configuration
+        id: copr_guard
+        run: |
+          if [ -z "${COPR_CONFIG}" ] || [ -z "${COPR_PROJECT}" ]; then
+            echo "COPR secrets not configured; skipping publication."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "COPR secrets detected; publication enabled."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download RPM artifacts
-        if: ${{ secrets.COPR_CONFIG != '' && secrets.COPR_PROJECT != '' }}
+        if: ${{ steps.copr_guard.outputs.publish == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: rpm-artifacts
           path: artifacts
 
       - name: Install copr-cli
-        if: ${{ secrets.COPR_CONFIG != '' && secrets.COPR_PROJECT != '' }}
+        if: ${{ steps.copr_guard.outputs.publish == 'true' }}
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install copr-cli
 
       - name: Configure copr-cli
-        if: ${{ secrets.COPR_CONFIG != '' && secrets.COPR_PROJECT != '' }}
-        env:
-          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        if: ${{ steps.copr_guard.outputs.publish == 'true' }}
         run: |
           mkdir -p ~/.config
           printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
           chmod 600 ~/.config/copr
 
       - name: Submit build to COPR
-        if: ${{ secrets.COPR_CONFIG != '' && secrets.COPR_PROJECT != '' }}
-        env:
-          COPR_PROJECT: ${{ secrets.COPR_PROJECT }}
+        if: ${{ steps.copr_guard.outputs.publish == 'true' }}
         run: |
           set -euo pipefail
           SRPM=$(ls artifacts/*.src.rpm | head -n1)
@@ -246,9 +256,8 @@ jobs:
           copr-cli build "$COPR_PROJECT" "$SRPM"
 
       - name: Skip publication (missing secrets)
-        if: ${{ secrets.COPR_CONFIG == '' || secrets.COPR_PROJECT == '' }}
-        run: |
-          echo "COPR secrets not configured; skipping publication."
+        if: ${{ steps.copr_guard.outputs.publish != 'true' }}
+        run: echo "COPR publication step skipped."
 
   build-windows:
     needs: create-tag
