@@ -83,7 +83,6 @@ license = "MIT"
 group = "Applications/Internet"
 vendor = "Francesco Zanti"
 url = "https://github.com/FrancescoZanti/MatePro"
-requires = ["gtk3"]
 assets = [
-	{ source = "target/release/matepro", dest = "/usr/bin/matepro", mode = "755" }
+	{ source = "../target/release/matepro", dest = "/usr/bin/matepro", mode = "755" }
 ]
