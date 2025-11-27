@@ -3,17 +3,25 @@
 
 use crate::mcp_sql;
 use anyhow::{anyhow, Context, Result};
+use calamine::{open_workbook, Data, Ods, Range, Reader, Xls, Xlsx};
+use lazy_static::lazy_static;
+use lopdf::Document;
+use regex::Regex;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{BufReader, ErrorKind, Read};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use sysinfo::System;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 use walkdir::WalkDir;
+use zip::read::ZipArchive;
 
 /// Tool definition with name, description and parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,6 +274,98 @@ impl AgentSystem {
             },
         );
 
+        tools.insert(
+            "text_translate".to_string(),
+            ToolDefinition {
+                name: "text_translate".to_string(),
+                description:
+                    "Traduce un testo in un'altra lingua utilizzando servizi di traduzione online"
+                        .to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "text".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Testo da tradurre (max 1500 caratteri)".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "target_language".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Lingua di destinazione (ISO code es: it, en, es)".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "source_language".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Lingua sorgente (ISO code). Default rilevamento automatico"
+                            .to_string(),
+                        required: false,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        tools.insert(
+            "document_summarize".to_string(),
+            ToolDefinition {
+                name: "document_summarize".to_string(),
+                description:
+                    "Crea un riassunto compatto di un documento di testo, PDF, Excel o Word."
+                        .to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "path".to_string(),
+                        param_type: "string".to_string(),
+                        description: "Percorso del file da riassumere".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "max_sentences".to_string(),
+                        param_type: "integer".to_string(),
+                        description: "Numero massimo di frasi nel riassunto (default 5)"
+                            .to_string(),
+                        required: false,
+                    },
+                ],
+                dangerous: false,
+            },
+        );
+
+        tools.insert(
+            "excel_improve".to_string(),
+            ToolDefinition {
+                name: "excel_improve".to_string(),
+                description:
+                    "Analizza un file Excel e suggerisce miglioramenti (metriche, grafici, pulizia dati)."
+                        .to_string(),
+                parameters: vec![ToolParameter {
+                    name: "path".to_string(),
+                    param_type: "string".to_string(),
+                    description: "Percorso del file Excel (.xlsx o .xls)".to_string(),
+                    required: true,
+                }],
+                dangerous: false,
+            },
+        );
+
+        tools.insert(
+            "word_improve".to_string(),
+            ToolDefinition {
+                name: "word_improve".to_string(),
+                description:
+                    "Analizza un documento Word (.docx) e propone miglioramenti di stile e leggibilità."
+                        .to_string(),
+                parameters: vec![ToolParameter {
+                    name: "path".to_string(),
+                    param_type: "string".to_string(),
+                    description: "Percorso del file Word".to_string(),
+                    required: true,
+                }],
+                dangerous: false,
+            },
+        );
+
         // MCP SQL Server tools
         tools.insert(
             "sql_connect".to_string(),
@@ -496,6 +596,10 @@ impl AgentSystem {
             "web_search" => self.execute_web_search(&call.parameters).await,
             "map_open" => self.execute_map_open(&call.parameters).await,
             "youtube_search" => self.execute_youtube_search(&call.parameters).await,
+            "text_translate" => self.execute_text_translate(&call.parameters).await,
+            "document_summarize" => self.execute_document_summarize(&call.parameters).await,
+            "excel_improve" => self.execute_excel_improve(&call.parameters).await,
+            "word_improve" => self.execute_word_improve(&call.parameters).await,
             "sql_connect" => self.execute_sql_connect(&call.parameters).await,
             "sql_query" => self.execute_sql_query(&call.parameters).await,
             "sql_list_tables" => self.execute_sql_list_tables(&call.parameters).await,
@@ -770,6 +874,144 @@ impl AgentSystem {
             encoded_query
         );
         Ok(format!("URL: {}", youtube_url))
+    }
+
+    async fn execute_text_translate(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let text = params
+            .get("text")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| anyhow!("Parametro 'text' mancante o vuoto"))?;
+
+        if text.chars().count() > 1_500 {
+            anyhow::bail!("Testo troppo lungo: massimo 1500 caratteri");
+        }
+
+        let target_language = params
+            .get("target_language")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| anyhow!("Parametro 'target_language' mancante"))?
+            .to_lowercase();
+
+        let source_language = params
+            .get("source_language")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("auto");
+
+        let encoded_text = urlencoding::encode(text);
+        let langpair = format!("{}|{}", source_language, target_language);
+
+        let url = format!(
+            "https://api.mymemory.translated.net/get?q={}&langpair={}",
+            encoded_text, langpair
+        );
+
+        let client = Client::new();
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .context("Errore richiesta traduzione")?
+            .error_for_status()
+            .context("Risposta traduzione non valida")?;
+
+        let payload: serde_json::Value = response
+            .json()
+            .await
+            .context("Errore parsing risposta traduzione")?;
+
+        let translated = payload["responseData"]["translatedText"]
+            .as_str()
+            .unwrap_or_default()
+            .trim();
+
+        if translated.is_empty() {
+            anyhow::bail!("Traduzione non disponibile");
+        }
+
+        let mut output = String::new();
+        output.push_str("🌐 Traduzione completata\n");
+        output.push_str(&format!("- Sorgente: {}\n", source_language));
+        output.push_str(&format!("- Destinazione: {}\n\n", target_language));
+        output.push_str("**Risultato**\n");
+        output.push_str(translated);
+
+        Ok(output)
+    }
+
+    async fn execute_document_summarize(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Parametro 'path' mancante"))?;
+
+        let max_sentences = params
+            .get("max_sentences")
+            .and_then(|v| v.as_i64())
+            .map(|n| n.max(1).min(10) as usize)
+            .unwrap_or(5);
+
+        let text = extract_text_from_path(Path::new(path))
+            .with_context(|| format!("Impossibile leggere il documento: {}", path))?;
+
+        if text.trim().is_empty() {
+            anyhow::bail!("Il documento non contiene testo analizzabile");
+        }
+
+        let summary = summarize_text(&text, max_sentences);
+        let stats = compute_text_statistics(&text);
+
+        let mut output = String::new();
+        output.push_str("📝 Riassunto documento\n");
+        output.push_str(&format!(
+            "- parole totali: {}\n- frasi stimate: {}\n- lunghezza media frase: {:.1} parole\n\n",
+            stats.word_count, stats.sentence_count, stats.avg_sentence_len
+        ));
+        output.push_str("**Riassunto**\n");
+        output.push_str(&summary);
+
+        Ok(output)
+    }
+
+    async fn execute_excel_improve(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Parametro 'path' mancante"))?;
+
+        let improvement = analyze_excel(Path::new(path))
+            .with_context(|| format!("Impossibile analizzare il file Excel: {}", path))?;
+
+        Ok(improvement)
+    }
+
+    async fn execute_word_improve(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<String> {
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Parametro 'path' mancante"))?;
+
+        let improvement = analyze_word_document(Path::new(path))
+            .with_context(|| format!("Impossibile analizzare il file Word: {}", path))?;
+
+        Ok(improvement)
     }
 
     async fn execute_sql_connect(
@@ -1079,6 +1321,475 @@ impl AgentSystem {
             }
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct TextStatistics {
+    word_count: usize,
+    sentence_count: usize,
+    avg_sentence_len: f64,
+}
+
+fn extract_text_from_path(path: &Path) -> Result<String> {
+    if !path.exists() {
+        anyhow::bail!("File non trovato: {}", path.display());
+    }
+
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let text = match extension.as_str() {
+        "pdf" => extract_text_from_pdf(path)?,
+        "xlsx" | "xls" | "ods" => extract_text_from_spreadsheet(path)?,
+        "docx" => extract_text_from_docx(path)?,
+        "txt" | "md" | "csv" => fs::read_to_string(path)?,
+        other => anyhow::bail!("Formato file non supportato per riassunto: {}", other),
+    };
+
+    Ok(normalize_whitespace(&text))
+}
+
+fn extract_text_from_pdf(path: &Path) -> Result<String> {
+    let doc = Document::load(path)?;
+    let mut text = String::new();
+
+    for page_num in 1..=doc.get_pages().len() {
+        if let Ok(page_text) = doc.extract_text(&[page_num as u32]) {
+            text.push_str(&page_text);
+            text.push('\n');
+        }
+    }
+
+    Ok(text)
+}
+
+fn extract_text_from_spreadsheet(path: &Path) -> Result<String> {
+    let mut output = String::new();
+
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map_or(false, |ext| ext.eq_ignore_ascii_case("xlsx"))
+    {
+        let mut workbook: Xlsx<_> = open_workbook(path)?;
+        let sheet_names = workbook.sheet_names();
+        for sheet_name in sheet_names {
+            if let Ok(range) = workbook.worksheet_range(&sheet_name) {
+                append_range_text(&mut output, &sheet_name, &range);
+            }
+        }
+    } else if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map_or(false, |ext| ext.eq_ignore_ascii_case("xls"))
+    {
+        let mut workbook: Xls<_> = open_workbook(path)?;
+        let sheet_names = workbook.sheet_names();
+        for sheet_name in sheet_names {
+            if let Ok(range) = workbook.worksheet_range(&sheet_name) {
+                append_range_text(&mut output, &sheet_name, &range);
+            }
+        }
+    } else {
+        let mut workbook: Ods<_> = open_workbook(path)?;
+        let sheet_names = workbook.sheet_names();
+        for sheet_name in sheet_names {
+            if let Ok(range) = workbook.worksheet_range(&sheet_name) {
+                append_range_text(&mut output, &sheet_name, &range);
+            }
+        }
+    }
+
+    Ok(output)
+}
+
+fn append_range_text(output: &mut String, sheet_name: &str, range: &Range<Data>) {
+    output.push_str(&format!("=== Foglio: {} ===\n", sheet_name));
+    for row in range.rows() {
+        let values: Vec<String> = row
+            .iter()
+            .map(|cell| match cell {
+                Data::Empty => String::new(),
+                Data::String(s) => s.to_string(),
+                Data::Float(f) => format!("{:.4}", f),
+                Data::Int(i) => i.to_string(),
+                Data::Bool(b) => b.to_string(),
+                Data::DateTime(dt) => dt.to_string(),
+                Data::DateTimeIso(dt) => dt.to_string(),
+                _ => cell.to_string(),
+            })
+            .collect();
+        output.push_str(&values.join("\t"));
+        output.push('\n');
+    }
+    output.push('\n');
+}
+
+fn extract_text_from_docx(path: &Path) -> Result<String> {
+    let file = fs::File::open(path)?;
+    let mut archive = ZipArchive::new(file)?;
+    let mut document = archive.by_name("word/document.xml")?;
+    let mut xml_content = String::new();
+    document.read_to_string(&mut xml_content)?;
+
+    lazy_static! {
+        static ref DOCX_TAG_REGEX: Regex = Regex::new(r"<[^>]+>").unwrap();
+    }
+
+    let text = DOCX_TAG_REGEX.replace_all(&xml_content, " ");
+    Ok(normalize_whitespace(&text))
+}
+
+fn summarize_text(text: &str, max_sentences: usize) -> String {
+    let sentences = sentence_tokenize(text);
+    if sentences.len() <= max_sentences {
+        return sentences.join(" \n");
+    }
+
+    let mut frequencies: HashMap<String, usize> = HashMap::new();
+    for sentence in &sentences {
+        for token in tokenize_sentence(sentence) {
+            if token.len() > 2 && !STOPWORDS.contains(token.as_str()) {
+                *frequencies.entry(token).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut scored: Vec<(usize, f64)> = sentences
+        .iter()
+        .enumerate()
+        .map(|(idx, sentence)| {
+            let mut score = 0.0;
+            for token in tokenize_sentence(sentence) {
+                if let Some(freq) = frequencies.get(&token) {
+                    score += *freq as f64;
+                }
+            }
+            (idx, score)
+        })
+        .collect();
+
+    scored.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+
+    let mut selected: Vec<usize> = scored
+        .into_iter()
+        .take(max_sentences)
+        .map(|(idx, _)| idx)
+        .collect();
+    selected.sort_unstable();
+
+    selected
+        .into_iter()
+        .map(|idx| sentences[idx].clone())
+        .collect::<Vec<_>>()
+        .join(" \n")
+}
+
+fn compute_text_statistics(text: &str) -> TextStatistics {
+    let sentences = sentence_tokenize(text);
+    let sentence_count = sentences.len().max(1);
+    let word_count: usize = sentences.iter().map(|s| s.split_whitespace().count()).sum();
+
+    TextStatistics {
+        word_count,
+        sentence_count,
+        avg_sentence_len: word_count as f64 / sentence_count as f64,
+    }
+}
+
+fn analyze_excel(path: &Path) -> Result<String> {
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match extension.as_str() {
+        "xlsx" => {
+            let workbook: Xlsx<_> = open_workbook(path)?;
+            analyze_excel_with_workbook(workbook)
+        }
+        "xls" => {
+            let workbook: Xls<_> = open_workbook(path)?;
+            analyze_excel_with_workbook(workbook)
+        }
+        "ods" => {
+            let workbook: Ods<_> = open_workbook(path)?;
+            analyze_excel_with_workbook(workbook)
+        }
+        other => anyhow::bail!("Formato non supportato per Excel: {}", other),
+    }
+}
+
+fn analyze_excel_with_workbook<W>(mut workbook: W) -> Result<String>
+where
+    W: Reader<BufReader<fs::File>>,
+{
+    let sheet_names = workbook.sheet_names();
+
+    if sheet_names.is_empty() {
+        anyhow::bail!("Il file non contiene fogli");
+    }
+
+    let mut report = String::new();
+    report.push_str("📊 Miglioramento Excel\n");
+
+    for sheet in sheet_names {
+        let range = workbook
+            .worksheet_range(&sheet)
+            .map_err(|err| anyhow!("Foglio non leggibile {}: {:?}", sheet, err))?;
+
+        let mut row_count = 0usize;
+        let mut column_count = 0usize;
+        let mut numeric_columns: HashSet<usize> = HashSet::new();
+        let mut text_columns: HashSet<usize> = HashSet::new();
+        let mut empty_cells = 0usize;
+        let mut total_cells = 0usize;
+
+        for row in range.rows() {
+            row_count += 1;
+            column_count = column_count.max(row.len());
+
+            for (idx, cell) in row.iter().enumerate() {
+                total_cells += 1;
+                match cell {
+                    Data::Empty => empty_cells += 1,
+                    Data::Float(_) | Data::Int(_) | Data::Bool(_) => {
+                        numeric_columns.insert(idx);
+                    }
+                    Data::DateTime(_) | Data::DateTimeIso(_) => {
+                        numeric_columns.insert(idx);
+                    }
+                    Data::String(s) => {
+                        if s.trim().parse::<f64>().is_ok() {
+                            numeric_columns.insert(idx);
+                        } else if !s.trim().is_empty() {
+                            text_columns.insert(idx);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let fill_ratio = if total_cells == 0 {
+            0.0
+        } else {
+            1.0 - (empty_cells as f64 / total_cells as f64)
+        };
+
+        report.push_str(&format!(
+            "\n**Foglio: {}**\n- righe: {}\n- colonne utilizzate: {}\n- riempimento celle: {:.0}%\n",
+            sheet,
+            row_count,
+            column_count,
+            fill_ratio * 100.0
+        ));
+
+        let mut suggestions: Vec<String> = Vec::new();
+
+        if column_count > 15 {
+            suggestions
+                .push("Valuta la suddivisione del foglio o l'uso di una tabella pivot".to_string());
+        }
+
+        if !numeric_columns.is_empty() {
+            let columns_list = numeric_columns
+                .iter()
+                .map(|idx| column_name_from_index(*idx))
+                .collect::<Vec<_>>()
+                .join(", ");
+            suggestions.push(format!(
+                "Numeri nelle colonne {}: puoi aggiungere grafici, subtotali o KPI",
+                columns_list
+            ));
+        }
+
+        if fill_ratio < 0.7 {
+            suggestions
+                .push("Molte celle vuote: valuta la pulizia o la convalida dei dati".to_string());
+        }
+
+        if !text_columns.is_empty() {
+            suggestions.push(
+                "Aggiungi filtri e regole di formattazione per le colonne testuali rilevanti"
+                    .to_string(),
+            );
+        }
+
+        if suggestions.is_empty() {
+            report.push_str("- Nessun miglioramento consigliato: struttura già ottimizzata\n");
+        } else {
+            report.push_str("- Suggerimenti:\n");
+            for suggestion in suggestions {
+                report.push_str(&format!("  • {}\n", suggestion));
+            }
+        }
+    }
+
+    Ok(report)
+}
+
+fn analyze_word_document(path: &Path) -> Result<String> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let raw_text = match ext.as_str() {
+        "docx" => extract_text_from_docx(path)?,
+        "txt" | "md" => fs::read_to_string(path)?,
+        other => anyhow::bail!("Formato non supportato per miglioramento Word: {}", other),
+    };
+
+    let text = normalize_whitespace(&raw_text);
+    if text.is_empty() {
+        anyhow::bail!("Il documento è vuoto o non contiene testo leggibile");
+    }
+
+    let stats = compute_text_statistics(&text);
+    let sentences = sentence_tokenize(&text);
+    let long_sentences: Vec<&str> = sentences
+        .iter()
+        .filter(|s| s.split_whitespace().count() > 25)
+        .take(3)
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut suggestions: Vec<String> = Vec::new();
+
+    if stats.avg_sentence_len > 20.0 {
+        suggestions.push(
+            "Riduci la lunghezza media delle frasi per migliorare la leggibilità (target < 20 parole)"
+                .to_string(),
+        );
+    }
+
+    if long_sentences.len() >= 3 {
+        suggestions.push("Spezza le frasi molto lunghe per agevolare la comprensione".to_string());
+    }
+
+    let repeated_words = detect_repeated_words(&text);
+    if !repeated_words.is_empty() {
+        suggestions.push(format!(
+            "Varietà lessicale: sostituisci parole ripetute frequentemente ({})",
+            repeated_words.join(", ")
+        ));
+    }
+
+    let mut report = String::new();
+    report.push_str("🖋️ Miglioramento documento Word\n");
+    report.push_str(&format!(
+        "- parole totali: {}\n- frasi: {}\n- lunghezza media frase: {:.1} parole\n\n",
+        stats.word_count, stats.sentence_count, stats.avg_sentence_len
+    ));
+
+    if suggestions.is_empty() {
+        report.push_str("Il documento ha già una buona struttura e stile.\n");
+    } else {
+        report.push_str("**Suggerimenti**\n");
+        for suggestion in suggestions {
+            report.push_str(&format!("- {}\n", suggestion));
+        }
+    }
+
+    if !long_sentences.is_empty() {
+        report.push_str("\n**Frasi lunghe da rivedere**\n");
+        for sentence in long_sentences {
+            report.push_str(&format!("- {}\n", sentence));
+        }
+    }
+
+    Ok(report)
+}
+
+fn detect_repeated_words(text: &str) -> Vec<String> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for token in tokenize_sentence(text) {
+        if token.len() > 4 {
+            *counts.entry(token).or_insert(0) += 1;
+        }
+    }
+
+    let mut repeated: Vec<(String, usize)> = counts
+        .into_iter()
+        .filter(|(_, count)| *count >= 5)
+        .collect();
+
+    repeated.sort_by(|a, b| b.1.cmp(&a.1));
+    repeated.into_iter().take(5).map(|(word, _)| word).collect()
+}
+
+fn normalize_whitespace(input: &str) -> String {
+    input
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn sentence_tokenize(text: &str) -> Vec<String> {
+    lazy_static! {
+        static ref SENTENCE_REGEX: Regex = Regex::new(r"(?m)(?<=[.!?])\s+(?=[A-ZÀ-Ý])").unwrap();
+    }
+
+    SENTENCE_REGEX
+        .split(text)
+        .map(|sentence| sentence.trim())
+        .filter(|sentence| !sentence.is_empty())
+        .map(|sentence| sentence.to_string())
+        .collect()
+}
+
+fn tokenize_sentence(sentence: &str) -> Vec<String> {
+    sentence
+        .split(|c: char| !c.is_alphanumeric() && c != '’')
+        .filter_map(|word| {
+            let token = word.trim().to_lowercase();
+            if token.is_empty() {
+                None
+            } else {
+                Some(token)
+            }
+        })
+        .collect()
+}
+
+fn column_name_from_index(index: usize) -> String {
+    let mut index = index;
+    let mut name = String::new();
+
+    loop {
+        let rem = index % 26;
+        name.insert(0, (b'A' + rem as u8) as char);
+        if index < 26 {
+            break;
+        }
+        index = index / 26 - 1;
+    }
+
+    name
+}
+
+lazy_static! {
+    static ref STOPWORDS: HashSet<&'static str> = {
+        let words = [
+            "a", "about", "anche", "and", "are", "as", "at", "be", "che", "con", "della", "delle",
+            "dello", "di", "e", "for", "from", "gli", "i", "il", "in", "is", "la", "le", "lo",
+            "loro", "ma", "nel", "non", "o", "of", "on", "per", "quella", "quello", "sono", "that",
+            "the", "their", "this", "to", "una", "uno", "with", "you",
+        ];
+        words.iter().copied().collect()
+    };
 }
 
 fn summarize_query_result(result: &mcp_sql::QueryResult) -> String {
