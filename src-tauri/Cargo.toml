@@ -1,6 +1,6 @@
 [package]
 name = "matepro"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2021"
 authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
 description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"
@@ -24,6 +24,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

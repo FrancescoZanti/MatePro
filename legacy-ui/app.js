@@ -1,7 +1,7 @@
 // MatePro - Tauri Frontend Application
 
 const { invoke } = window.__TAURI__.core;
-const { open } = window.__TAURI_PLUGIN_OPENER__;
+const { open: openExternal } = window.__TAURI_PLUGIN_OPENER__;
 const { appWindow } = window.__TAURI__.window;
 
 // ============ STATE ============
@@ -487,7 +487,7 @@ async function executeToolCall(toolCall) {
         if (result.success && result.output.startsWith('URL: ')) {
             const url = result.output.replace('URL: ', '');
             try {
-                await open(url);
+                await openExternal(url);
             } catch (e) {
                 console.error('Failed to open URL:', e);
             }
@@ -568,24 +568,87 @@ function showConfirmModal(toolCall) {
 
 // ============ FILE HANDLING ============
 
+async function addAttachmentFromPath(path) {
+    if (!path) {
+        showError('Percorso file non disponibile. Usa il pulsante "Allega file" per selezionare il documento.');
+        return false;
+    }
+
+    if (state.attachedFiles.some(file => file.path === path)) {
+        return false;
+    }
+
+    try {
+        const [filename, content] = await invoke('read_file', { path });
+        state.attachedFiles.push({ name: filename, content, path });
+        return true;
+    } catch (error) {
+        showError(`Errore lettura file: ${error}`);
+        return false;
+    }
+}
+
 async function attachFile() {
+    const dialogOpen = window.__TAURI__?.dialog?.open;
+
+    if (typeof dialogOpen === 'function') {
+        try {
+            const selection = await dialogOpen({
+                multiple: true,
+                filters: [
+                    {
+                        name: 'Documenti supportati',
+                        extensions: ['pdf', 'xlsx', 'xls', 'ods', 'txt', 'md', 'csv'],
+                    },
+                ],
+            });
+
+            if (!selection) {
+                return;
+            }
+
+            let paths = [];
+
+            if (Array.isArray(selection)) {
+                paths = selection;
+            } else if (typeof selection === 'string') {
+                paths = [selection];
+            } else if (selection && Array.isArray(selection.paths)) {
+                paths = selection.paths;
+            } else if (selection && selection.path) {
+                paths = [selection.path];
+            }
+
+            let added = false;
+
+            for (const path of paths) {
+                const result = await addAttachmentFromPath(path);
+                added = added || result;
+            }
+
+            if (added) {
+                updateAttachedFiles();
+                updateSendButton();
+            }
+        } catch (error) {
+            showError(`Errore selezione file: ${error}`);
+        }
+        return;
+    }
+
     elements.fileInput.click();
 }
 
 async function handleFileSelect(event) {
     const file = event.target.files[0];
+    event.target.value = '';
     if (!file) return;
-    
-    try {
-        const [filename, content] = await invoke('read_file', { path: file.path || file.name });
-        state.attachedFiles.push({ name: filename, content });
+
+    const added = await addAttachmentFromPath(file.path || null);
+    if (added) {
         updateAttachedFiles();
         updateSendButton();
-    } catch (error) {
-        showError(`Errore lettura file: ${error}`);
     }
-    
-    event.target.value = '';
 }
 
 function updateAttachedFiles() {

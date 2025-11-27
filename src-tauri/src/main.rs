@@ -767,6 +767,7 @@ fn get_app_version() -> String {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Arc::new(AppState::default()))
         .invoke_handler(tauri::generate_handler![

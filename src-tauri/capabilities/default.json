@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/capability.schema.json",
+  "identifier": "default",
+  "description": "Capacità predefinite per MatePro.",
+  "platforms": ["windows", "linux", "macOS"],
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "dialog:allow-message",
+    "opener:allow-open-url",
+    "opener:allow-reveal-item-in-dir",
+    "opener:allow-default-urls",
+    "shell:allow-open"
+  ]
+}
