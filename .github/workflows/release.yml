@@ -9,114 +9,99 @@ env:
   CARGO_TERM_COLOR: always
 
 permissions:
-  contents: write
+          cargo vendor --versioned-dirs vendor
 
-jobs:
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<'EOF'
+[source.crates-io]
+replace-with = "vendored-sources"
 
-  create-tag:
-    name: Create Release Tag
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.create_tag.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+[source.vendored-sources]
       
-      - name: Get version from Cargo.toml
-        id: get_version
-        run: |
-          VERSION=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d '"' -f2)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-      
-      - name: Create and push tag
-        id: create_tag
-        run: |
-          VERSION="${{ steps.get_version.outputs.version }}"
-          TAG="v$VERSION-build.${{ github.run_number }}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Creating tag: $TAG"
-          
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Delete tag if exists (both local and remote)
-          git tag -d "$TAG" 2>/dev/null || true
-          git push origin ":refs/tags/$TAG" 2>/dev/null || true
-          
-          # Create and push new tag
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
+EOF
 
-  build-linux:
-    needs: create-tag
-    name: Build Linux
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config build-essential \
-            libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
-            libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libxkbcommon-dev libssl-dev
-      
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      
-      - name: Build release
-        run: |
-          cd src-tauri
-          cargo build --release
-      
-      - name: Create tarball
-        run: |
-          cd target/release
-          tar -czf matepro-linux-x64.tar.gz matepro
-          mv matepro-linux-x64.tar.gz ../../
-      
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: matepro-linux-x64.tar.gz
-          tag_name: ${{ needs.create-tag.outputs.tag }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RPMBUILD_DIR="$PWD/rpmbuild"
+          rm -rf "$RPMBUILD_DIR"
+          mkdir -p "$RPMBUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
 
-  build-deb:
-    needs: create-tag
-    name: Build DEB Package
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config build-essential \
-            libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
-            libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-            libsoup-3.0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libxkbcommon-dev libssl-dev
-      
-      - name: Install Rust and cargo-deb
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
-      
+          STAGING_ROOT="$RPMBUILD_DIR/SOURCES/${PACKAGE}-${VERSION}"
+          mkdir -p "$STAGING_ROOT"
+
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='target/' \
+            --exclude='rpmbuild/' \
+            ../ "$STAGING_ROOT"/
+
+          tar -C "$RPMBUILD_DIR/SOURCES" -czf "${PACKAGE}-${VERSION}.tar.gz" "${PACKAGE}-${VERSION}"
+          rm -rf "$STAGING_ROOT"
+
+          SPEC_FILE="$RPMBUILD_DIR/SPECS/${PACKAGE}.spec"
+          cat > "$SPEC_FILE" <<EOF
+%global debug_package %{nil}
+
+Name:           $PACKAGE
+Version:        $VERSION
+Release:        1%{?dist}
+Summary:        Client grafico per interagire con server Ollama
+
+License:        MIT
+URL:            https://github.com/FrancescoZanti/MatePro
+Source0:        %{name}-%{version}.tar.gz
+
+ExclusiveArch:  x86_64
+
+BuildRequires:  cargo
+BuildRequires:  rust-packaging
+BuildRequires:  pkgconfig(gtk+-3.0)
+BuildRequires:  pkgconfig(gdk-pixbuf-2.0)
+BuildRequires:  pkgconfig(cairo)
+BuildRequires:  pkgconfig(pango)
+BuildRequires:  pkgconfig(atk)
+BuildRequires:  pkgconfig(webkit2gtk-4.1)
+BuildRequires:  pkgconfig(javascriptcoregtk-4.1)
+BuildRequires:  pkgconfig(soup-3.0)
+BuildRequires:  pkgconfig(xkbcommon)
+BuildRequires:  pkgconfig(xcb-render)
+BuildRequires:  pkgconfig(xcb-shape)
+BuildRequires:  pkgconfig(xcb-xfixes)
+BuildRequires:  pkgconfig(glib-2.0)
+BuildRequires:  openssl-devel
+BuildRequires:  desktop-file-utils
+BuildRequires:  libappindicator-gtk3-devel
+
+Requires:       gtk3
+Requires:       webkit2gtk4.1
+Requires:       libsoup3
+
+%description
+Client grafico moderno per interagire con server Ollama, con temi adattivi, supporto markdown e strumenti integrati.
+
+%prep
+%autosetup -n %{name}-%{version}
+
+%build
+pushd src-tauri
+cargo build --release --frozen
+popd
+
+%install
+install -Dm755 src-tauri/target/release/matepro %{buildroot}%{_bindir}/matepro
+
+%files
+%license LICENSE
+%doc README.md
+%{_bindir}/matepro
+
+%changelog
+* Thu Nov 27 2025 Francesco Zanti <me@FrancescoZanti.dev> - $VERSION-1
+- Build generated from GitHub Actions
+EOF
+
+          rpmbuild --define "_topdir $RPMBUILD_DIR" -bs "$SPEC_FILE"
+
+          rm -rf vendor .cargo
       - name: Build DEB package
         run: |
           cd src-tauri
@@ -151,7 +136,7 @@ jobs:
             libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
             libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
             libsoup-3.0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libxkbcommon-dev libssl-dev rpm
+            libxkbcommon-dev libssl-dev rpm rsync
       
       - name: Install Rust and cargo-generate-rpm
         uses: actions-rs/toolchain@v1
@@ -180,21 +165,47 @@ jobs:
 
           PACKAGE=$(grep -m1 '^name = ' Cargo.toml | cut -d '"' -f2)
           VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d '"' -f2)
-          SPEC_FILE=$(find target/generate-rpm -maxdepth 1 -name '*.spec' | head -n1)
+          cargo vendor --versioned-dirs vendor
 
-          if [ -z "$SPEC_FILE" ] || [ ! -f "$SPEC_FILE" ]; then
-            echo "RPM spec file not found" >&2
-            exit 1
-          fi
+          mkdir -p .cargo
+          {
+            printf '%s\n' '[source.crates-io]'
+            printf '%s\n' 'replace-with = "vendored-sources"'
+            printf '\n'
+            printf '%s\n' '[source.vendored-sources]'
+            printf '%s\n' 'directory = "vendor"'
+          } > .cargo/config.toml
 
           RPMBUILD_DIR="$PWD/rpmbuild"
           rm -rf "$RPMBUILD_DIR"
           mkdir -p "$RPMBUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
 
-          git -C .. archive --format=tar --prefix="${PACKAGE}-${VERSION}/" HEAD:src-tauri | gzip > "$RPMBUILD_DIR/SOURCES/${PACKAGE}-${VERSION}.tar.gz"
-          cp "$SPEC_FILE" "$RPMBUILD_DIR/SPECS/"
+          STAGING_ROOT="$RPMBUILD_DIR/SOURCES/${PACKAGE}-${VERSION}"
+          mkdir -p "$STAGING_ROOT"
 
-          rpmbuild --define "_topdir $RPMBUILD_DIR" -bs "$RPMBUILD_DIR/SPECS/$(basename "$SPEC_FILE")"
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='target/' \
+            --exclude='rpmbuild/' \
+            .. "$STAGING_ROOT"/
+
+          tar -C "$RPMBUILD_DIR/SOURCES" -czf "${PACKAGE}-${VERSION}.tar.gz" "${PACKAGE}-${VERSION}"
+          rm -rf "$STAGING_ROOT"
+
+          SPEC_TEMPLATE="$GITHUB_WORKSPACE/packaging/matepro.spec.in"
+
+          if [ ! -f "$SPEC_TEMPLATE" ]; then
+            echo "Spec template not found at $SPEC_TEMPLATE" >&2
+            exit 1
+          fi
+
+          SPEC_FILE="$RPMBUILD_DIR/SPECS/${PACKAGE}.spec"
+          sed "s/@VERSION@/$VERSION/g" "$SPEC_TEMPLATE" > "$SPEC_FILE"
+
+          rpmbuild --define "_topdir $RPMBUILD_DIR" -bs "$SPEC_FILE"
+
+          rm -rf vendor .cargo
 
       - name: Collect RPM artifacts
         run: |
