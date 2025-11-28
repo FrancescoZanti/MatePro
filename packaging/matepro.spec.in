@@ -19,21 +19,11 @@ BuildRequires:  pkgconfig(gdk-pixbuf-2.0)
 BuildRequires:  pkgconfig(cairo)
 BuildRequires:  pkgconfig(pango)
 BuildRequires:  pkgconfig(atk)
-%if 0%{?amzn} || 0%{?amzn2023}
-BuildRequires:  pkgconfig(webkit2gtk-4.0)
-BuildRequires:  pkgconfig(javascriptcoregtk-4.0)
-BuildRequires:  pkgconfig(libsoup-2.4)
-%elif 0%{?rhel} && 0%{?rhel} < 10
-BuildRequires:  pkgconfig(webkit2gtk-4.0)
-BuildRequires:  pkgconfig(javascriptcoregtk-4.0)
-BuildRequires:  pkgconfig(libsoup-2.4)
-%else
 BuildRequires:  pkgconfig(webkit2gtk-4.1)
 BuildRequires:  pkgconfig(javascriptcoregtk-4.1)
 BuildRequires:  pkgconfig(libsoup-3.0)
 BuildRequires:  libappindicator-gtk3-devel
 BuildRequires:  rust-packaging
-%endif
 BuildRequires:  pkgconfig(xkbcommon)
 BuildRequires:  pkgconfig(xcb-render)
 BuildRequires:  pkgconfig(xcb-shape)
@@ -43,17 +33,9 @@ BuildRequires:  openssl-devel
 BuildRequires:  desktop-file-utils
 
 Requires:       gtk3
-%if 0%{?amzn} || 0%{?amzn2023}
-Requires:       webkit2gtk3
-Requires:       libsoup
-%elif 0%{?rhel} && 0%{?rhel} < 10
-Requires:       webkit2gtk3
-Requires:       libsoup
-%else
 Requires:       webkit2gtk4.1
 Requires:       libsoup3
 Requires:       libappindicator-gtk3
-%endif
 
 %description
 Client grafico moderno per interagire con server Ollama, con temi adattivi, supporto markdown e strumenti integrati.

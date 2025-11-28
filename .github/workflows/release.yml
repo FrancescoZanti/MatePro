@@ -309,9 +309,8 @@ jobs:
           SRPM=$(ls artifacts/*.src.rpm | head -n1)
           CHROOTS=(
             fedora-43-x86_64
-            centos-stream-10-x86_64
-            amazonlinux-2023-x86_64
-            almalinux-9-x86_64
+            fedora-42-x86_64
+            fedora-rawhide-x86_64
           )
 
           ARGS=()
