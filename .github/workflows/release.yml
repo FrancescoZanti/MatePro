@@ -9,111 +9,126 @@ env:
   CARGO_TERM_COLOR: always
 
 permissions:
-          cargo vendor --versioned-dirs vendor
+  contents: write
 
-          mkdir -p .cargo
-          cat > .cargo/config.toml <<'EOF'
-[source.crates-io]
-replace-with = "vendored-sources"
+jobs:
 
-[source.vendored-sources]
-      
-EOF
+  create-tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.create_tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-          RPMBUILD_DIR="$PWD/rpmbuild"
-          rm -rf "$RPMBUILD_DIR"
-          mkdir -p "$RPMBUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
+      - name: Get version from Cargo.toml
+        id: get_version
+        run: |
+          VERSION=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d '"' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
 
-          STAGING_ROOT="$RPMBUILD_DIR/SOURCES/${PACKAGE}-${VERSION}"
-          mkdir -p "$STAGING_ROOT"
+      - name: Create and push tag
+        id: create_tag
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          TAG="v$VERSION-build.${{ github.run_number }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Creating tag: $TAG"
 
-          rsync -a \
-            --exclude='.git/' \
-            --exclude='.github/' \
-            --exclude='target/' \
-            --exclude='rpmbuild/' \
-            ../ "$STAGING_ROOT"/
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          tar -C "$RPMBUILD_DIR/SOURCES" -czf "${PACKAGE}-${VERSION}.tar.gz" "${PACKAGE}-${VERSION}"
-          rm -rf "$STAGING_ROOT"
+          # Delete tag if exists (both local and remote)
+          git tag -d "$TAG" 2>/dev/null || true
+          git push origin ":refs/tags/$TAG" 2>/dev/null || true
 
-          SPEC_FILE="$RPMBUILD_DIR/SPECS/${PACKAGE}.spec"
-          cat > "$SPEC_FILE" <<EOF
-%global debug_package %{nil}
+          # Create and push new tag
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
 
-Name:           $PACKAGE
-Version:        $VERSION
-Release:        1%{?dist}
-Summary:        Client grafico per interagire con server Ollama
+  build-linux:
+    needs: create-tag
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-License:        MIT
-URL:            https://github.com/FrancescoZanti/MatePro
-Source0:        %{name}-%{version}.tar.gz
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential \
+            libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
+            libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libssl-dev
 
-ExclusiveArch:  x86_64
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-BuildRequires:  cargo
-BuildRequires:  rust-packaging
-BuildRequires:  pkgconfig(gtk+-3.0)
-BuildRequires:  pkgconfig(gdk-pixbuf-2.0)
-BuildRequires:  pkgconfig(cairo)
-BuildRequires:  pkgconfig(pango)
-BuildRequires:  pkgconfig(atk)
-BuildRequires:  pkgconfig(webkit2gtk-4.1)
-BuildRequires:  pkgconfig(javascriptcoregtk-4.1)
-BuildRequires:  pkgconfig(soup-3.0)
-BuildRequires:  pkgconfig(xkbcommon)
-BuildRequires:  pkgconfig(xcb-render)
-BuildRequires:  pkgconfig(xcb-shape)
-BuildRequires:  pkgconfig(xcb-xfixes)
-BuildRequires:  pkgconfig(glib-2.0)
-BuildRequires:  openssl-devel
-BuildRequires:  desktop-file-utils
-BuildRequires:  libappindicator-gtk3-devel
+      - name: Build release
+        run: |
+          cd src-tauri
+          cargo build --release
 
-Requires:       gtk3
-Requires:       webkit2gtk4.1
-Requires:       libsoup3
+      - name: Create tarball
+        run: |
+          cd target/release
+          tar -czf matepro-linux-x64.tar.gz matepro
+          mv matepro-linux-x64.tar.gz ../../
 
-%description
-Client grafico moderno per interagire con server Ollama, con temi adattivi, supporto markdown e strumenti integrati.
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: matepro-linux-x64.tar.gz
+          tag_name: ${{ needs.create-tag.outputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-%prep
-%autosetup -n %{name}-%{version}
+  build-deb:
+    needs: create-tag
+    name: Build DEB Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-%build
-pushd src-tauri
-cargo build --release --frozen
-popd
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential \
+            libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
+            libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libssl-dev
 
-%install
-install -Dm755 src-tauri/target/release/matepro %{buildroot}%{_bindir}/matepro
+      - name: Install Rust and cargo-deb
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-%files
-%license LICENSE
-%doc README.md
-%{_bindir}/matepro
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
 
-%changelog
-* Thu Nov 27 2025 Francesco Zanti <me@FrancescoZanti.dev> - $VERSION-1
-- Build generated from GitHub Actions
-EOF
-
-          rpmbuild --define "_topdir $RPMBUILD_DIR" -bs "$SPEC_FILE"
-
-          rm -rf vendor .cargo
       - name: Build DEB package
         run: |
           cd src-tauri
           cargo deb
-      
+
       - name: Rename DEB file
         run: |
           cd target/debian
           DEB_FILE=$(ls *.deb)
           mv "$DEB_FILE" matepro-linux-amd64.deb
           mv matepro-linux-amd64.deb ../../
-      
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
@@ -128,7 +143,7 @@ EOF
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -137,27 +152,27 @@ EOF
             libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
             libsoup-3.0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev libssl-dev rpm rsync
-      
+
       - name: Install Rust and cargo-generate-rpm
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-      
+
       - name: Install cargo-generate-rpm
         run: cargo install cargo-generate-rpm
-      
+
       - name: Build release
         run: |
           cd src-tauri
           cargo build --release
-      
+
       - name: Generate RPM
         run: |
           cd src-tauri
           cargo generate-rpm
-      
+
       - name: Create source RPM for COPR
         run: |
           set -euo pipefail
@@ -241,7 +256,7 @@ EOF
             matepro-linux-x86_64.rpm
             matepro.src.rpm
           retention-days: 7
-      
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
@@ -307,7 +322,7 @@ EOF
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install system dependencies
         run: choco install -y nsis
 
@@ -317,7 +332,7 @@ EOF
           profile: minimal
           toolchain: stable
           override: true
-      
+
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
@@ -355,7 +370,7 @@ EOF
             Remove-Item "matepro-windows-x64.zip"
           }
           Compress-Archive -Path "matepro-windows-x64.exe" -DestinationPath "matepro-windows-x64.zip"
-      
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
@@ -372,29 +387,29 @@ EOF
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-      
+
       - name: Add targets
         run: |
           rustup target add x86_64-apple-darwin
           rustup target add aarch64-apple-darwin
-      
+
       - name: Build release (x86_64)
         run: |
           cd src-tauri
           cargo build --release --target x86_64-apple-darwin
-      
+
       - name: Build release (aarch64)
         run: |
           cd src-tauri
           cargo build --release --target aarch64-apple-darwin
-      
+
       - name: Create universal binary
         run: |
           mkdir -p target/universal/release
@@ -402,14 +417,14 @@ EOF
             target/x86_64-apple-darwin/release/matepro \
             target/aarch64-apple-darwin/release/matepro \
             -output target/universal/release/matepro
-      
+
       - name: Create app bundle
         run: |
           mkdir -p MatePro.app/Contents/MacOS
           mkdir -p MatePro.app/Contents/Resources
-          
+
           cp target/universal/release/matepro MatePro.app/Contents/MacOS/
-          
+
           cat > MatePro.app/Contents/Info.plist << EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -434,7 +449,7 @@ EOF
           </dict>
           </plist>
           EOF
-      
+
       - name: Create DMG
         run: |
           brew install create-dmg
@@ -446,7 +461,7 @@ EOF
             --app-drop-link 600 185 \
             "matepro-macos-universal.dmg" \
             "MatePro.app"
-      
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
@@ -461,17 +476,17 @@ EOF
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Update Release Body
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.create-tag.outputs.tag }}
           body: |
             # MatePro Release
-            
+
             ## 🚀 Novità
             Client Ollama con interfaccia grafica moderna
-            
+
             ## 📦 Download
             Scegli il pacchetto per il tuo sistema operativo:
             - **Windows Installer**: matepro-windows-installer.exe
@@ -480,7 +495,7 @@ EOF
             - **Linux DEB**: matepro-linux-amd64.deb
             - **Linux RPM**: matepro-linux-x86_64.rpm
             - **Linux Binary**: matepro-linux-x64.tar.gz
-            
+
             ## ✨ Caratteristiche
             - 🔍 Scansione automatica della rete per server Ollama
             - 🎨 Interfaccia grafica moderna stile Apple
