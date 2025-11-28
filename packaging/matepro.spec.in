@@ -11,6 +11,8 @@ Source0:        %{name}-%{version}.tar.gz
 
 ExclusiveArch:  x86_64
 
+%global cargo_target_dir %{_builddir}/cargo-target
+
 BuildRequires:  cargo
 BuildRequires:  pkgconfig(gtk+-3.0)
 BuildRequires:  pkgconfig(gdk-pixbuf-2.0)
@@ -62,12 +64,13 @@ Client grafico moderno per interagire con server Ollama, con temi adattivi, supp
 %build
 pushd src-tauri
 export CARGO_HOME=%{_builddir}/cargo-home
+export CARGO_TARGET_DIR=%{cargo_target_dir}
 cargo fetch --locked
 cargo build --release --locked
 popd
 
 %install
-install -Dm755 src-tauri/target/release/matepro %{buildroot}%{_bindir}/matepro
+install -Dm755 %{cargo_target_dir}/release/matepro %{buildroot}%{_bindir}/matepro
 
 %files
 %license LICENSE
