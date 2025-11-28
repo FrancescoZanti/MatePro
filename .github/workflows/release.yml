@@ -233,12 +233,16 @@ jobs:
             SRPM=$(ls *.src.rpm | head -n1)
             echo "Found source RPM in generate-rpm directory: $SRPM"
             cp "$SRPM" "$GITHUB_WORKSPACE/matepro.src.rpm"
-          elif ls ../rpmbuild/SRPMS/*.src.rpm >/dev/null 2>&1; then
-            SRPM=$(ls ../rpmbuild/SRPMS/*.src.rpm | head -n1)
+          elif ls ../../rpmbuild/SRPMS/*.src.rpm >/dev/null 2>&1; then
+            SRPM=$(ls ../../rpmbuild/SRPMS/*.src.rpm | head -n1)
             echo "Found source RPM in rpmbuild output: $SRPM"
             cp "$SRPM" "$GITHUB_WORKSPACE/matepro.src.rpm"
           else
             echo "Source RPM not found" >&2
+            echo "Debug: Listing src-tauri directory structure:"
+            ls -la ../..
+            ls -la ../../rpmbuild 2>/dev/null || echo "rpmbuild directory not found at ../../rpmbuild"
+            ls -la ../../rpmbuild/SRPMS 2>/dev/null || echo "SRPMS directory not found"
             exit 1
           fi
 
