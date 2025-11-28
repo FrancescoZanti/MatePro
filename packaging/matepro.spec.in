@@ -28,7 +28,7 @@ BuildRequires:  pkgconfig(libsoup-2.4)
 %else
 BuildRequires:  pkgconfig(webkit2gtk-4.1)
 BuildRequires:  pkgconfig(javascriptcoregtk-4.1)
-BuildRequires:  pkgconfig(soup-3.0)
+BuildRequires:  pkgconfig(libsoup-3.0)
 BuildRequires:  libappindicator-gtk3-devel
 BuildRequires:  rust-packaging
 %endif
@@ -36,7 +36,7 @@ BuildRequires:  pkgconfig(xkbcommon)
 BuildRequires:  pkgconfig(xcb-render)
 BuildRequires:  pkgconfig(xcb-shape)
 BuildRequires:  pkgconfig(xcb-xfixes)
-BuildRequires:  pkgconfig(glib-2.0)
+BuildRequires:  pkgconfig(glib-2.0) >= 2.70
 BuildRequires:  openssl-devel
 BuildRequires:  desktop-file-utils
 

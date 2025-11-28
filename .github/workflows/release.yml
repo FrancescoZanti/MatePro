@@ -307,8 +307,21 @@ jobs:
         run: |
           set -euo pipefail
           SRPM=$(ls artifacts/*.src.rpm | head -n1)
-          echo "Submitting $SRPM to COPR project"
-          copr-cli build "$COPR_PROJECT" "$SRPM"
+          CHROOTS=(
+            fedora-41-x86_64
+            fedora-40-x86_64
+            centos-stream-10-x86_64
+            amazonlinux-2023-x86_64
+            almalinux-9-x86_64
+          )
+
+          ARGS=()
+          for chroot in "${CHROOTS[@]}"; do
+            ARGS+=(--chroot "$chroot")
+          done
+
+          echo "Submitting $SRPM to COPR project for chroots: ${CHROOTS[*]}"
+          copr-cli build "$COPR_PROJECT" "$SRPM" "${ARGS[@]}"
 
       - name: Skip publication (missing secrets)
         if: ${{ steps.copr_guard.outputs.publish != 'true' }}
