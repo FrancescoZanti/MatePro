@@ -54,7 +54,9 @@ Client grafico moderno per interagire con server Ollama, con temi adattivi, supp
 
 %build
 pushd src-tauri
-cargo build --release --frozen
+export CARGO_HOME=%{_builddir}/cargo-home
+cargo fetch --locked
+cargo build --release --locked
 popd
 
 %install
