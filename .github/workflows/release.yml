@@ -203,6 +203,10 @@ EOF
           SPEC_FILE="$RPMBUILD_DIR/SPECS/${PACKAGE}.spec"
           sed "s/@VERSION@/$VERSION/g" "$SPEC_TEMPLATE" > "$SPEC_FILE"
 
+          # expose the spec for steps that still look in target/generate-rpm
+          mkdir -p target/generate-rpm
+          cp "$SPEC_FILE" "target/generate-rpm/${PACKAGE}.spec"
+
           rpmbuild --define "_topdir $RPMBUILD_DIR" -bs "$SPEC_FILE"
 
           rm -rf vendor .cargo
