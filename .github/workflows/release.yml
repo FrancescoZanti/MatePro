@@ -195,18 +195,12 @@ jobs:
           rm -rf "$RPMBUILD_DIR"
           mkdir -p "$RPMBUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
 
-          STAGING_ROOT="$RPMBUILD_DIR/SOURCES/${PACKAGE}-${VERSION}"
-          mkdir -p "$STAGING_ROOT"
-
-          rsync -a \
-            --exclude='.git/' \
-            --exclude='.github/' \
-            --exclude='target/' \
-            --exclude='rpmbuild/' \
-            .. "$STAGING_ROOT"/
-
-          tar -C "$RPMBUILD_DIR/SOURCES" -czf "${PACKAGE}-${VERSION}.tar.gz" "${PACKAGE}-${VERSION}"
-          rm -rf "$STAGING_ROOT"
+          ARCHIVE_PATH="$RPMBUILD_DIR/SOURCES/${PACKAGE}-${VERSION}.tar.gz"
+          git -C .. archive --format=tar --prefix="${PACKAGE}-${VERSION}/" HEAD | gzip > "$ARCHIVE_PATH"
+          if [ ! -f "$ARCHIVE_PATH" ]; then
+            echo "Failed to create source archive at $ARCHIVE_PATH" >&2
+            exit 1
+          fi
 
           SPEC_TEMPLATE="$GITHUB_WORKSPACE/packaging/matepro.spec.in"
 
