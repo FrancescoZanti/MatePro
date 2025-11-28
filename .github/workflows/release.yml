@@ -26,7 +26,7 @@ jobs:
       - name: Get version from Cargo.toml
         id: get_version
         run: |
-          VERSION=$(grep -m1 '^version = ' src-tauri/Cargo.toml | cut -d '"' -f2)
+          VERSION=$(grep -m1 '^version = ' src-tauri/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' | tr -d '\r')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
@@ -178,8 +178,8 @@ jobs:
           set -euo pipefail
           cd src-tauri
 
-          PACKAGE=$(grep -m1 '^name = ' Cargo.toml | cut -d '"' -f2)
-          VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d '"' -f2)
+          PACKAGE=$(grep -m1 '^name = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' | tr -d '\r')
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/' | tr -d '\r')
           cargo vendor --versioned-dirs vendor
 
           mkdir -p .cargo
