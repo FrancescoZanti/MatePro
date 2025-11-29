@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -290,19 +291,46 @@ fn get_timestamp() -> String {
 fn extract_text_from_pdf(path: &PathBuf) -> Result<String> {
     let doc = Document::load(path)?;
     let mut text = String::new();
+    let pages = doc.get_pages();
 
-    for page_num in 1..=doc.get_pages().len() {
-        if let Ok(page_text) = doc.extract_text(&[page_num as u32]) {
+    for page_num in pages.keys() {
+        if let Ok(page_text) = doc.extract_text(&[*page_num]) {
             text.push_str(&page_text);
             text.push('\n');
         }
     }
 
     if text.trim().is_empty() {
-        anyhow::bail!("Impossibile estrarre testo dal PDF");
+        if let Some(fallback_text) = extract_text_from_pdf_with_pdftotext(path) {
+            return Ok(fallback_text);
+        }
+        anyhow::bail!(
+            "Impossibile estrarre testo dal PDF. Il file potrebbe contenere solo immagini o testo protetto."
+        );
     }
 
     Ok(text)
+}
+
+fn extract_text_from_pdf_with_pdftotext(path: &PathBuf) -> Option<String> {
+    let output = Command::new("pdftotext")
+        .arg("-layout")
+        .arg("-nopgbrk")
+        .arg(path.as_os_str())
+        .arg("-")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 fn extract_text_from_excel(path: &PathBuf) -> Result<String> {

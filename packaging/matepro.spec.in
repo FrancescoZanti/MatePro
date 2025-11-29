@@ -36,6 +36,7 @@ Requires:       gtk3
 Requires:       webkit2gtk4.1
 Requires:       libsoup3
 Requires:       libappindicator-gtk3
+Requires:       poppler-utils
 
 %description
 Client grafico moderno per interagire con server Ollama, con temi adattivi, supporto markdown e strumenti integrati.
