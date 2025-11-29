@@ -91,7 +91,9 @@ url = "https://github.com/FrancescoZanti/MatePro"
 assets = [
 	{ source = "../target/release/matepro", dest = "/usr/bin/matepro", mode = "755" }
 ]
-requires = "poppler-utils"
+
+[package.metadata.generate-rpm.requires]
+poppler-utils = "*"
 
 [package.metadata.deb]
 depends = "$auto, poppler-utils"
