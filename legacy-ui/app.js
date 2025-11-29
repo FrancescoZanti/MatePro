@@ -13,7 +13,7 @@ const state = {
     messageHistory: [],
     messageHistoryIndex: -1,
     attachedFiles: [],
-    agentMode: false,
+    agentMode: true,
     currentIteration: 0,
     maxIterations: 5,
     systemPromptAdded: false,
@@ -120,6 +120,53 @@ function normalizeLanguageCode(tag) {
 }
 
 // ============ UTILITIES ============
+
+function normalizeTextForMatch(text) {
+    return text
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+}
+
+function detectNewsQuery(message) {
+    if (!message || typeof message !== 'string') {
+        return null;
+    }
+
+    const normalized = normalizeTextForMatch(message);
+
+    const directKeywords = [
+        'notizie',
+        'news',
+        'ultime notizie',
+        'ultima ora',
+        'ultimora',
+        'breaking news',
+        'aggiornamenti',
+        'aggiornamento',
+        'novita',
+        'cronaca',
+        'titoli',
+        'prime pagine',
+    ];
+
+    const hasDirectKeyword = directKeywords.some(keyword => normalized.includes(keyword));
+
+    const hasTodayContext =
+        normalized.includes('oggi') &&
+        (normalized.includes('successo') ||
+            normalized.includes('accaduto') ||
+            normalized.includes('succede') ||
+            normalized.includes('e successo') ||
+            normalized.includes("e' successo"));
+
+    if (!hasDirectKeyword && !hasTodayContext) {
+        return null;
+    }
+
+    const query = message.trim();
+    return query.length > 6 ? query : 'notizie oggi';
+}
 
 function showScreen(screenId) {
     ['setup-screen', 'loading-screen', 'chat-screen'].forEach(id => {
@@ -654,7 +701,7 @@ async function sendMessage() {
         if (state.agentMode) {
             const toolsDesc = await getToolsDescription();
             systemContent += '\n\n' + toolsDesc;
-            systemContent += '\n\n**LINEE GUIDA:** Usa i tool appropriati per le richieste dell\'utente.';
+            systemContent += '\n\n**LINEE GUIDA:**\n- Usa i tool appropriati per le richieste dell\'utente.\n- Se la risposta richiede dati aggiornati o verifiche, esegui `web_search` e integra i risultati nel ragionamento.\n- Riassumi le fonti web con le tue parole e cita gli URL principali nella risposta.';
         }
         
         state.conversation.push({ role: 'user', content: systemContent, hidden: true });
@@ -667,6 +714,18 @@ async function sendMessage() {
     }
     
     state.conversation.push({ role: 'user', content: fullContent, hidden: false });
+
+    if (state.agentMode) {
+        const newsQuery = detectNewsQuery(text);
+        if (newsQuery) {
+            const safeQuery = newsQuery.replace(/"/g, "'");
+            state.conversation.push({
+                role: 'user',
+                content: `PROMEMORIA AGENTE: L'utente sta chiedendo notizie o eventi attuali. Esegui il tool web_search con la query "${safeQuery}" (usa max_results=5) prima di rispondere. Riassumi i risultati aggiornati in italiano e cita le fonti principali usando collegamenti Markdown [Titolo](URL) e indicando il dominio della fonte.`,
+                hidden: true,
+            });
+        }
+    }
 
     if (text) {
         state.messageHistory.push(text);
@@ -1193,6 +1252,8 @@ function initEventListeners() {
 
 async function init() {
     initEventListeners();
+    elements.agentModeToggle.checked = state.agentMode;
+    updateIterationCounter();
     await loadVersionIndicator();
     await loadGreeting();
     checkForUpdates();

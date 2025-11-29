@@ -4,6 +4,7 @@
 use crate::mcp_sql;
 use anyhow::{anyhow, Context, Result};
 use calamine::{open_workbook, Data, Ods, Range, Reader, Xls, Xlsx};
+use html_escape::decode_html_entities;
 use lazy_static::lazy_static;
 use lopdf::Document;
 use regex::Regex;
@@ -20,6 +21,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use sysinfo::System;
 use tokio::sync::Mutex;
+use url::Url;
 use uuid::Uuid;
 use walkdir::WalkDir;
 use zip::read::ZipArchive;
@@ -75,6 +77,19 @@ impl ToolResult {
             )
         }
     }
+}
+
+lazy_static! {
+    static ref NEWS_ITEM_RE: Regex = Regex::new(r"(?s)<item>(.*?)</item>").unwrap();
+    static ref NEWS_TITLE_RE: Regex =
+        Regex::new(r"(?s)<title>(?:<!\[CDATA\[(.*?)\]\]>|(.*?))</title>").unwrap();
+    static ref NEWS_LINK_RE: Regex =
+        Regex::new(r"(?s)<link>(?:<!\[CDATA\[(.*?)\]\]>|(.*?))</link>").unwrap();
+    static ref NEWS_DESC_RE: Regex = Regex::new(
+        r"(?s)<description>(?:<!\[CDATA\[(.*?)\]\]>|(.*?))</description>"
+    )
+    .unwrap();
+    static ref HTML_TAG_RE: Regex = Regex::new(r"<[^>]+>").unwrap();
 }
 
 /// Agent system that manages tools
@@ -223,13 +238,21 @@ impl AgentSystem {
             "web_search".to_string(),
             ToolDefinition {
                 name: "web_search".to_string(),
-                description: "Esegue una ricerca su Google.".to_string(),
-                parameters: vec![ToolParameter {
-                    name: "query".to_string(),
-                    param_type: "string".to_string(),
-                    description: "La query di ricerca".to_string(),
-                    required: true,
-                }],
+                description: "Esegue una ricerca web e restituisce risultati e snippet aggiornati.".to_string(),
+                parameters: vec![
+                    ToolParameter {
+                        name: "query".to_string(),
+                        param_type: "string".to_string(),
+                        description: "La query di ricerca".to_string(),
+                        required: true,
+                    },
+                    ToolParameter {
+                        name: "max_results".to_string(),
+                        param_type: "integer".to_string(),
+                        description: "Numero massimo di risultati (default 5)".to_string(),
+                        required: false,
+                    },
+                ],
                 dangerous: false,
             },
         );
@@ -825,9 +848,275 @@ impl AgentSystem {
             .and_then(|v| v.as_str())
             .context("Parametro 'query' mancante")?;
 
+        let max_results = params
+            .get("max_results")
+            .and_then(|v| v.as_i64())
+            .map(|n| n.clamp(1, 8) as usize)
+            .unwrap_or(5);
+
         let encoded_query = urlencoding::encode(query);
-        let search_url = format!("https://www.google.com/search?q={}", encoded_query);
-        Ok(format!("URL: {}", search_url))
+        let request_url = format!(
+            "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1&no_redirect=1&t=matepro-agent",
+            encoded_query
+        );
+
+        let client = Client::builder()
+            .user_agent("MatePro-Agent/1.0 (+https://github.com/FrancescoZanti/MatePro)")
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .context("Impossibile creare client HTTP per la ricerca web")?;
+
+        let response = client
+            .get(&request_url)
+            .send()
+            .await
+            .context("Errore durante la richiesta di ricerca web")?
+            .error_for_status()
+            .context("Risposta non valida dal motore di ricerca")?;
+
+        let payload: serde_json::Value = response
+            .json()
+            .await
+            .context("Impossibile analizzare la risposta del motore di ricerca")?;
+
+        let mut quick_answers: Vec<String> = Vec::new();
+
+        if let Some(answer) = payload
+            .get("Answer")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+        {
+            quick_answers.push(format!("Risposta rapida: {}", answer.trim()));
+        }
+
+        if let Some(abstract_text) = payload
+            .get("AbstractText")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+        {
+            let abstract_url = payload
+                .get("AbstractURL")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|url| format!(" (fonte: {})", url));
+
+            quick_answers.push(format!(
+                "Sintesi principale: {}{}",
+                abstract_text.trim(),
+                abstract_url.unwrap_or_default()
+            ));
+        }
+
+        let mut results: Vec<(String, Option<String>, Option<String>)> = Vec::new();
+
+        fn push_entry(
+            results: &mut Vec<(String, Option<String>, Option<String>)>,
+            max_results: usize,
+            text: &str,
+            url: Option<&str>,
+        ) {
+            if results.len() >= max_results {
+                return;
+            }
+
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return;
+            }
+
+            let (title_raw, snippet_raw) = if let Some((t, s)) = trimmed.split_once(" - ") {
+                (t.trim(), Some(s.trim()))
+            } else {
+                (trimmed, None)
+            };
+
+            let snippet = snippet_raw.and_then(|text| {
+                let cleaned = text.trim();
+                if cleaned.is_empty() {
+                    None
+                } else {
+                    Some(cleaned.chars().take(220).collect::<String>())
+                }
+            });
+
+            let title = title_raw.trim();
+            let url = url
+                .map(|u| u.trim())
+                .filter(|u| !u.is_empty())
+                .map(|u| u.to_string());
+
+            if !title.is_empty() {
+                results.push((title.to_string(), snippet, url));
+            }
+        }
+
+        if let Some(items) = payload.get("Results").and_then(|v| v.as_array()) {
+            for item in items {
+                if results.len() >= max_results {
+                    break;
+                }
+
+                if let Some(text) = item.get("Text").and_then(|v| v.as_str()) {
+                    let url = item.get("FirstURL").and_then(|v| v.as_str());
+                    push_entry(&mut results, max_results, text, url);
+                }
+            }
+        }
+
+        if results.len() < max_results {
+            if let Some(related) = payload.get("RelatedTopics").and_then(|v| v.as_array()) {
+                for entry in related {
+                    if results.len() >= max_results {
+                        break;
+                    }
+
+                    if let Some(topics) = entry.get("Topics").and_then(|v| v.as_array()) {
+                        for topic in topics {
+                            if results.len() >= max_results {
+                                break;
+                            }
+
+                            if let Some(text) = topic.get("Text").and_then(|v| v.as_str()) {
+                                let url = topic.get("FirstURL").and_then(|v| v.as_str());
+                                push_entry(&mut results, max_results, text, url);
+                            }
+                        }
+                    } else if let Some(text) = entry.get("Text").and_then(|v| v.as_str()) {
+                        let url = entry.get("FirstURL").and_then(|v| v.as_str());
+                        push_entry(&mut results, max_results, text, url);
+                    }
+                }
+            }
+        }
+
+        let fallback_url = format!("https://www.google.com/search?q={}", encoded_query);
+        let mut output = String::new();
+        output.push_str(&format!("🌐 Ricerca web per \"{}\"\n\n", query));
+
+        let mut had_structured = false;
+
+        if !quick_answers.is_empty() {
+            for answer in &quick_answers {
+                output.push_str(answer);
+                output.push('\n');
+            }
+            output.push('\n');
+            had_structured = true;
+        }
+
+        if !results.is_empty() {
+            for (idx, (title, snippet, url)) in results.iter().enumerate() {
+                let (title_line, domain_label) = if let Some(url) = url {
+                    let display_domain = Url::parse(url)
+                        .ok()
+                        .and_then(|parsed| parsed.domain().map(|d| d.to_string()))
+                        .unwrap_or_else(|| url.clone());
+                    (format!("[{}]({})", title, url), format!(" — {}", display_domain))
+                } else {
+                    (title.clone(), String::new())
+                };
+
+                output.push_str(&format!("{}. {}{}\n", idx + 1, title_line, domain_label));
+                if let Some(snippet) = snippet {
+                    output.push_str(&format!("   {}\n", snippet));
+                }
+                output.push('\n');
+            }
+            had_structured = true;
+        }
+
+        if !had_structured {
+            if let Ok(news_items) = Self::fetch_google_news(&client, query, max_results).await {
+                if !news_items.is_empty() {
+                    output.push_str("📰 Notizie recenti\n");
+                    for (idx, (title, snippet, url)) in news_items.iter().enumerate() {
+                        let display_domain = Url::parse(url)
+                            .ok()
+                            .and_then(|parsed| parsed.domain().map(|d| d.to_string()))
+                            .unwrap_or_else(|| url.clone());
+
+                        output.push_str(&format!(
+                            "{}. [{}]({}) — {}\n",
+                            idx + 1,
+                            title,
+                            url,
+                            display_domain
+                        ));
+                        if let Some(snippet) = snippet {
+                            output.push_str(&format!("   {}\n", snippet));
+                        }
+                        output.push('\n');
+                    }
+                    had_structured = true;
+                }
+            }
+        }
+
+        if had_structured {
+            output.push_str(&format!("🔗 Altri risultati: {}", fallback_url));
+        } else {
+            output.push_str("⚠️ Non ho trovato risultati strutturati dal motore di ricerca.\n");
+            output.push_str(&format!("🔗 Prova a consultare: {}", fallback_url));
+        }
+
+        Ok(output)
+    }
+
+    async fn fetch_google_news(
+        client: &Client,
+        query: &str,
+        max_results: usize,
+    ) -> Result<Vec<(String, Option<String>, String)>> {
+        let encoded_query = urlencoding::encode(query);
+        let rss_url = format!(
+            "https://news.google.com/rss/search?q={}&hl=it&gl=IT&ceid=IT:it",
+            encoded_query
+        );
+
+        let response = client
+            .get(&rss_url)
+            .send()
+            .await
+            .context("Errore durante il recupero delle notizie")?
+            .error_for_status()
+            .context("Risposta non valida da Google News")?;
+
+        let body = response
+            .text()
+            .await
+            .context("Impossibile leggere il feed di notizie")?;
+
+        let mut items = Vec::new();
+
+        for capture in NEWS_ITEM_RE.captures_iter(&body) {
+            if items.len() >= max_results {
+                break;
+            }
+
+            let block = capture.get(1).map(|m| m.as_str()).unwrap_or("");
+
+            let title = capture_rss_field(block, &NEWS_TITLE_RE).unwrap_or_default();
+            let link = capture_rss_field(block, &NEWS_LINK_RE).unwrap_or_default();
+
+            if title.is_empty() || link.is_empty() {
+                continue;
+            }
+
+            let description = capture_rss_field(block, &NEWS_DESC_RE);
+            let snippet = description.and_then(|raw| {
+                let stripped = HTML_TAG_RE.replace_all(&raw, " ");
+                let normalized = normalize_whitespace(stripped.as_ref());
+                if normalized.is_empty() {
+                    None
+                } else {
+                    Some(normalized.chars().take(220).collect::<String>())
+                }
+            });
+
+            items.push((title, snippet, link));
+        }
+
+        Ok(items)
     }
 
     async fn execute_map_open(
@@ -1478,6 +1767,19 @@ fn append_range_text(output: &mut String, sheet_name: &str, range: &Range<Data>)
         output.push('\n');
     }
     output.push('\n');
+}
+
+fn capture_rss_field(block: &str, regex: &Regex) -> Option<String> {
+    let captures = regex.captures(block)?;
+    for idx in 1..captures.len() {
+        if let Some(m) = captures.get(idx) {
+            let value = m.as_str().trim();
+            if !value.is_empty() {
+                return Some(decode_html_entities(value).into_owned());
+            }
+        }
+    }
+    None
 }
 
 fn extract_text_from_docx(path: &Path) -> Result<String> {
