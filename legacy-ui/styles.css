@@ -415,6 +415,49 @@ button:disabled {
     font-size: 0.9em;
 }
 
+.message-bubble h1,
+.message-bubble h2,
+.message-bubble h3,
+.message-bubble h4,
+.message-bubble h5,
+.message-bubble h6 {
+    margin: 0.75rem 0 0.5rem;
+    font-weight: 600;
+}
+
+.message-bubble ul,
+.message-bubble ol {
+    margin: 0.5rem 0 0.5rem 1.5rem;
+    padding-left: 0.75rem;
+}
+
+.message-bubble li {
+    margin: 0.25rem 0;
+}
+
+.message-bubble blockquote {
+    margin: 0.5rem 0;
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--accent);
+    color: var(--text-secondary);
+}
+
+.message-bubble hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0.75rem 0;
+}
+
+.message-bubble a {
+    color: var(--accent);
+    text-decoration: none;
+    word-break: break-word;
+}
+
+.message-bubble a:hover {
+    text-decoration: underline;
+}
+
 .message-bubble p {
     margin: 0.5rem 0;
 }

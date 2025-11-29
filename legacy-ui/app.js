@@ -155,22 +155,177 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function decodeHtmlEntities(text) {
+    const div = document.createElement('div');
+    div.innerHTML = text;
+    return div.textContent || '';
+}
+
+function applyInlineFormatting(text) {
+    if (!text) {
+        return '';
+    }
+
+    const codeSpans = [];
+    let processed = text.replace(/`([^`]+)`/g, (_, code) => {
+        const index = codeSpans.length;
+        codeSpans.push(code);
+        return `\u0000${index}\u0000`;
+    });
+
+    const escapedChars = [];
+    processed = processed.replace(/\\([*_~`\\])/g, (_, char) => {
+        const index = escapedChars.length;
+        escapedChars.push(char);
+        return `\u0002${index}\u0002`;
+    });
+
+    processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
+        const decodedUrl = decodeHtmlEntities(url.trim());
+        if (!/^(https?:|mailto:)/i.test(decodedUrl)) {
+            return match;
+        }
+        const safeHref = escapeHtml(decodedUrl);
+        const safeLabel = label.trim() ? label : decodedUrl;
+        return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${safeLabel}</a>`;
+    });
+
+    processed = processed.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    processed = processed.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    processed = processed.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    processed = processed.replace(/\u0002(\d+)\u0002/g, (_, index) => escapeHtml(escapedChars[Number(index)]));
+
+    return processed.replace(/\u0000(\d+)\u0000/g, (_, index) => `<code>${codeSpans[Number(index)]}</code>`);
+}
+
 function formatMessage(content) {
-    // Basic markdown-like formatting
-    let formatted = escapeHtml(content);
-    
-    // Code blocks
-    formatted = formatted.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-    formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
-    
-    // Bold and italic
-    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    
-    // Line breaks
-    formatted = formatted.replace(/\n/g, '<br>');
-    
-    return formatted;
+    if (!content) {
+        return '';
+    }
+
+    const lines = content.replace(/\r\n/g, '\n').split('\n');
+    const htmlParts = [];
+    let inCodeBlock = false;
+    let codeLines = [];
+    let codeLanguage = '';
+    let currentList = null;
+    let paragraphLines = [];
+
+    const flushParagraph = () => {
+        if (paragraphLines.length === 0) {
+            return;
+        }
+        htmlParts.push(`<p>${paragraphLines.join('<br>')}</p>`);
+        paragraphLines = [];
+    };
+
+    const flushList = () => {
+        if (!currentList) {
+            return;
+        }
+        const items = currentList.items.join('');
+        htmlParts.push(`<${currentList.type}>${items}</${currentList.type}>`);
+        currentList = null;
+    };
+
+    const flushCode = () => {
+        if (!inCodeBlock) {
+            return;
+        }
+        const classAttr = codeLanguage ? ` class="language-${codeLanguage}"` : '';
+        htmlParts.push(`<pre><code${classAttr}>${codeLines.join('\n')}</code></pre>`);
+        inCodeBlock = false;
+        codeLines = [];
+        codeLanguage = '';
+    };
+
+    for (const rawLine of lines) {
+        const line = rawLine.replace(/\t/g, '    ');
+
+        if (line.trim().startsWith('```')) {
+            if (inCodeBlock) {
+                flushCode();
+            } else {
+                flushParagraph();
+                flushList();
+                inCodeBlock = true;
+                const languageRaw = line.trim().slice(3).trim().toLowerCase();
+                codeLanguage = languageRaw.replace(/[^a-z0-9+#._-]/gi, '');
+            }
+            continue;
+        }
+
+        if (inCodeBlock) {
+            codeLines.push(escapeHtml(line));
+            continue;
+        }
+
+        const trimmed = line.trim();
+
+        if (trimmed.length === 0) {
+            flushParagraph();
+            flushList();
+            continue;
+        }
+
+        const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+        if (headingMatch) {
+            flushParagraph();
+            flushList();
+            const level = headingMatch[1].length;
+            const headingText = applyInlineFormatting(escapeHtml(headingMatch[2].trim()));
+            htmlParts.push(`<h${level}>${headingText}</h${level}>`);
+            continue;
+        }
+
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+            flushParagraph();
+            flushList();
+            htmlParts.push('<hr>');
+            continue;
+        }
+
+        if (trimmed.startsWith('>')) {
+            flushParagraph();
+            flushList();
+            const quoteText = applyInlineFormatting(escapeHtml(trimmed.replace(/^>\s?/, '')));
+            htmlParts.push(`<blockquote>${quoteText}</blockquote>`);
+            continue;
+        }
+
+        const unorderedMatch = trimmed.match(/^([*+-])\s+(.*)$/);
+        if (unorderedMatch) {
+            flushParagraph();
+            const itemText = applyInlineFormatting(escapeHtml(unorderedMatch[2]));
+            if (!currentList || currentList.type !== 'ul') {
+                flushList();
+                currentList = { type: 'ul', items: [] };
+            }
+            currentList.items.push(`<li>${itemText}</li>`);
+            continue;
+        }
+
+        const orderedMatch = trimmed.match(/^(\d+)[.)]\s+(.*)$/);
+        if (orderedMatch) {
+            flushParagraph();
+            const itemText = applyInlineFormatting(escapeHtml(orderedMatch[2]));
+            if (!currentList || currentList.type !== 'ol') {
+                flushList();
+                currentList = { type: 'ol', items: [] };
+            }
+            currentList.items.push(`<li>${itemText}</li>`);
+            continue;
+        }
+
+        paragraphLines.push(applyInlineFormatting(escapeHtml(line)));
+    }
+
+    flushCode();
+    flushParagraph();
+    flushList();
+
+    return htmlParts.join('');
 }
 
 function scrollToBottom() {
