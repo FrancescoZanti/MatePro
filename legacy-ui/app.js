@@ -10,6 +10,8 @@ const state = {
     selectedModel: null,
     models: [],
     conversation: [],
+    messageHistory: [],
+    messageHistoryIndex: -1,
     attachedFiles: [],
     agentMode: false,
     currentIteration: 0,
@@ -510,6 +512,11 @@ async function sendMessage() {
     }
     
     state.conversation.push({ role: 'user', content: fullContent, hidden: false });
+
+    if (text) {
+        state.messageHistory.push(text);
+        state.messageHistoryIndex = -1;
+    }
     
     // Clear input
     elements.messageInput.value = '';
@@ -787,6 +794,53 @@ function updateSendButton() {
     elements.sendBtn.disabled = !hasContent || state.isProcessing;
 }
 
+function applyHistoryValue(value) {
+    elements.messageInput.value = value;
+    const caretPos = value.length;
+    if (typeof elements.messageInput.setSelectionRange === 'function') {
+        try {
+            elements.messageInput.setSelectionRange(caretPos, caretPos);
+        } catch (error) {
+            // Ignore unsupported selection operations
+        }
+    }
+    updateSendButton();
+}
+
+function navigateMessageHistory(direction) {
+    if (state.messageHistory.length === 0) {
+        return false;
+    }
+
+    if (direction === 'prev') {
+        if (state.messageHistoryIndex === -1) {
+            state.messageHistoryIndex = state.messageHistory.length - 1;
+        } else if (state.messageHistoryIndex > 0) {
+            state.messageHistoryIndex -= 1;
+        }
+    } else if (direction === 'next') {
+        if (state.messageHistoryIndex === -1) {
+            return false;
+        }
+
+        if (state.messageHistoryIndex < state.messageHistory.length - 1) {
+            state.messageHistoryIndex += 1;
+        } else {
+            state.messageHistoryIndex = -1;
+            applyHistoryValue('');
+            return true;
+        }
+    } else {
+        return false;
+    }
+
+    if (state.messageHistoryIndex !== -1) {
+        applyHistoryValue(state.messageHistory[state.messageHistoryIndex]);
+    }
+
+    return true;
+}
+
 function updateIterationCounter() {
     if (state.agentMode) {
         elements.iterationCounter.textContent = `(${state.currentIteration}/${state.maxIterations})`;
@@ -863,6 +917,7 @@ function newChat() {
     state.systemPromptAdded = false;
     state.currentIteration = 0;
     state.pendingToolCalls = [];
+    state.messageHistoryIndex = -1;
     
     elements.messages.innerHTML = `
         <div class="empty-state">
@@ -884,6 +939,7 @@ function disconnect() {
     state.systemPromptAdded = false;
     state.currentIteration = 0;
     state.greetingShown = false;
+    state.messageHistoryIndex = -1;
     
     showScreen('setup-screen');
     elements.setupError.classList.add('hidden');
@@ -918,6 +974,36 @@ function initEventListeners() {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
             sendMessage();
+            return;
+        }
+
+        if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+            const input = elements.messageInput;
+            const selectionStart = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+            const selectionEnd = typeof input.selectionEnd === 'number' ? input.selectionEnd : input.value.length;
+
+            if (selectionStart !== selectionEnd) {
+                return;
+            }
+
+            const valueLength = input.value.length;
+            const hasMultipleLines = input.value.includes('\n');
+
+            if (e.key === 'ArrowUp') {
+                const atStart = selectionStart === 0 && selectionEnd === 0;
+                const shouldUseHistory = !hasMultipleLines || atStart;
+
+                if (shouldUseHistory && navigateMessageHistory('prev')) {
+                    e.preventDefault();
+                }
+            } else if (e.key === 'ArrowDown') {
+                const atEnd = selectionStart === valueLength && selectionEnd === valueLength;
+                const shouldUseHistory = !hasMultipleLines || atEnd;
+
+                if (shouldUseHistory && navigateMessageHistory('next')) {
+                    e.preventDefault();
+                }
+            }
         }
     });
     

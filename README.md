@@ -6,314 +6,151 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
 [![Release](https://github.com/FrancescoZanti/MatePro/actions/workflows/release.yml/badge.svg)](https://github.com/FrancescoZanti/MatePro/actions/workflows/release.yml)
 
-Client Ollama moderno con interfaccia grafica elegante per chattare con modelli LLM, **ora con Tauri v2 e funzionalità agentiche** per il controllo del computer.
+MatePro è un client desktop multipiattaforma per l'interazione con modelli LLM serviti da Ollama. L'applicazione combina un'interfaccia grafica curata con funzionalità agentiche complete, integrate da strumenti dedicati alla gestione del sistema, del web e dei dati aziendali.
 
-> **v0.0.5-beta**: Progetto principale in `src-tauri/` (Tauri v2). Il codice legacy (egui) è stato spostato in `legacy-egui/` e `legacy-ui/`.
+> **Stato del progetto:** `v0.0.5-beta`. Il codice attivo risiede in `src-tauri/` (Tauri v2). Le directory `legacy-egui/` e `legacy-ui/` sono mantenute unicamente per archivio storico.
 
 ![MatePro Screenshot](.github/images/matepro-main.png)
 
-## 📸 Screenshots
+## Panoramica
 
-<details>
-<summary>Vedi altre immagini</summary>
+- Applicazione desktop per Windows, macOS e Linux basata su Tauri v2.
+- Interfaccia conversazionale moderna con supporto Markdown, matematica e allegati.
+- Modalità agente con strumenti specializzati per task locali e remoti.
+- Controlli di sicurezza e tracciamento in tempo reale delle azioni.
 
-### Selezione Server
-![Server Selection](.github/images/server-selection.png)
+## Architettura del Progetto
 
-### Chat Interface
-![Chat Interface](.github/images/chat-interface.png)
+- `src-tauri/` – codice principale (frontend Tauri con backend Rust).
+- `legacy-egui/` – implementazione precedente in egui (deprecata).
+- `legacy-ui/` – asset HTML/CSS legacy (non più mantenuti).
+- `packaging/` – materiale per la distribuzione dei pacchetti.
 
-### Caricamento File
-![File Upload](.github/images/file-upload.png)
+Le attività di sviluppo devono concentrarsi su `src-tauri/`.
 
-### Selezione Modello
-![Model Selection](.github/images/model-selection.png)
+## Funzionalità
 
-</details>
+- **Interfaccia utente**: layout ispirato a macOS, temi chiaro/scuro, chat a bolle, formattazione Markdown avanzata, anteprima allegati, timestamp e supporto multilinea.
+- **Gestione conversazioni**: collegamento a istanze Ollama locali/remoto, selezione dinamica dei modelli con indicatore di carico, cronologia persistente e scorciatoie da tastiera.
+- **Modalità agente di sistema**: esecuzione controllata di comandi shell, navigazione e modifica del filesystem, raccolta di metriche (CPU, RAM, processi), orchestrazione di task complessi.
+- **Strumenti web e browser**: apertura di URL, ricerca Google, consultazione di Google Maps, ricerca YouTube, visualizzazione di documenti locali attraverso l'integrazione browser.
+- **Tool MCP SQL Server**: connessione in sola lettura a SQL Server con autenticazione Windows/SQL, esecuzione di query, generazione report e supporto per credenziali di dominio.
+- **Automazione avanzata**: loop agentico autonomo, riconoscimento di intenti complessi, gestione di più step operativi e richieste di conferma per azioni sensibili.
+- **Sicurezza e osservabilità**: autorizzazioni granulari, log live, conferme esplicite per operazioni critiche e guida contestuale agli strumenti disponibili.
 
-## 📁 Struttura del Progetto
+### Documentazione di dettaglio
 
-- **`src-tauri/`** - Applicazione principale (Tauri v2) ✅ ATTIVA
-- **`legacy-egui/`** - Vecchia versione con egui (deprecata)
-- **`legacy-ui/`** - Vecchi asset HTML/CSS (deprecati)
+- `AGENT_FEATURES.md` – panoramica completa della modalità agente.
+- `AGENT_WEB_TOOLS.md` – guida agli strumenti web e browser.
+- `MCP_SQL_GUIDE.md` – istruzioni per l'integrazione SQL Server.
+- `AGENT_TEST_PROMPTS.md` e `AGENT_WEB_TEST_PROMPTS.md` – raccolte di prompt ed esempi di test.
 
-> **Nota**: Usa sempre `src-tauri/` per lo sviluppo. Le cartelle legacy sono mantenute per riferimento storico.
+## Requisiti di Sistema
 
-## Prerequisiti
-
-- Rust installato (<https://rustup.rs/>)
-- Ollama installato e in esecuzione (<https://ollama.ai/>)
-- Almeno un modello scaricato (es: `ollama pull llama2`)
-- Per Linux: dipendenze GTK e WebKit
+- Toolchain Rust (consigliata l'installazione tramite <https://rustup.rs/>).
+- Ollama attivo con almeno un modello scaricato (`ollama pull llama2`).
+- Dipendenze GTK/WebKit su Linux. Per Debian/Ubuntu:
 
 ```bash
-# Ubuntu/Debian
 sudo apt-get install -y pkg-config build-essential \
-  libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
-  libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-  libsoup-3.0-dev
+   libgtk-3-dev libgdk-pixbuf2.0-dev libcairo2-dev libpango1.0-dev \
+   libatk1.0-dev libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+   libsoup-3.0-dev
 ```
 
-## Installazione
+## Installazione Rapida
+
+### Download da GitHub Releases
+
+1. Visitare la pagina delle release su [GitHub](https://github.com/FrancescoZanti/MatePro/releases).
+2. Scaricare il pacchetto per la piattaforma desiderata (ZIP per Windows, DMG per macOS, tar.gz/DEB/RPM per Linux).
+3. Verificare l'integrità del download (hash, firma digitale se disponibile).
+4. Installare o estrarre il pacchetto rispettando le istruzioni del formato selezionato.
+5. Su Linux, in caso di binario standalone, rendere eseguibile il file (`chmod +x matepro`) e avviare con `./matepro`.
+
+### Installazione tramite Fedora COPR
+
+1. Abilitare il repository dedicato:
 
 ```bash
-# Clona il repository
-git clone https://github.com/FrancescoZanti/MatePro.git
-cd MatePro
+sudo dnf copr enable frzzzzz19/MatePro
+```
 
-# Build con Tauri
-cd src-tauri
+1. Installare il pacchetto:
+
+```bash
+sudo dnf install matepro
+```
+
+1. Avviare l'applicazione dal menu o tramite terminale (`matepro`).
+
+Il repository COPR è mantenuto in allineamento con le release ufficiali e provvede automaticamente alle dipendenze necessarie in ambiente Fedora.
+
+## Compilazione dai Sorgenti
+
+```bash
+git clone https://github.com/FrancescoZanti/MatePro.git
+cd MatePro/src-tauri
 cargo build --release
 ```
 
-## Utilizzo
+Il binario compilato è disponibile in `../target/release/matepro`.
+
+## Esecuzione
 
 ```bash
-# Dalla cartella src-tauri
+# Avvio in modalità release
 cargo run --release
 
-# Oppure con Tauri CLI (se installato)
+# Con Tauri CLI (se installato)
 cargo tauri dev
-```
 
-Oppure dopo la compilazione:
-
-```bash
+# Avvio diretto del binario compilato
 ./target/release/matepro
 ```
 
-## ✨ Funzionalità
+## Dipendenze Principali
 
-### Funzionalità Base
-- 🔍 **Scansione automatica della rete** per trovare server Ollama disponibili
-- 🎨 **Interfaccia grafica moderna** con design elegante in stile Apple
-- 🌓 **Tema chiaro/scuro** adattivo alle preferenze di sistema
-- 💬 **Chat conversazionale** con bolle messaggi stile iMessage
-- 🔌 **Connessione a istanze Ollama** locali o remote
-- 🤖 **Selezione interattiva** del modello con indicatore peso (🟢🟡🔴)
-- 📎 **Caricamento file** (PDF, Excel, TXT) per analisi e traduzioni
-- 📝 **Rendering Markdown** con syntax highlighting per codice
-- 🔢 **Formule matematiche** con notazione Unicode
-- ⏰ **Timestamp** su ogni messaggio
-- 📝 **Area di input spaziosa** con supporto multilinea
-- ⌨️ **Scorciatoie da tastiera** (Ctrl+Enter per inviare)
+- `tauri` v2 – framework applicativo multipiattaforma.
+- `tauri-plugin-shell` – esecuzione di comandi shell.
+- `tauri-plugin-opener` – apertura di URL e file locali.
+- `reqwest` – client HTTP per interfacciarsi con Ollama.
+- `serde`, `serde_json` – serializzazione e deserializzazione.
+- `tokio` – runtime asincrono.
+- `anyhow` – gestione avanzata degli errori.
+- `local-ip-address` – rilevamento della rete locale.
+- `tiberius` – driver SQL Server nativo.
 
-### 🤖 Funzionalità Agentiche (NUOVO!)
+## Procedura di Release
 
-#### Tool Sistema
-- 🔧 **Modalità Agente** attivabile con un click
-- 🖥️ **Controllo del computer** tramite tool specializzati
-- ⚡ **Esecuzione comandi shell** con conferme di sicurezza
-- 📁 **Manipolazione filesystem** (leggi, scrivi, naviga)
-- 📊 **Monitoraggio sistema** (CPU, RAM, processi)
+1. Aggiornare la versione in `src-tauri/Cargo.toml` e `src-tauri/tauri.conf.json`.
+1. Committare le modifiche (esempio: `git commit -am "Release v0.1.0"`).
+1. Creare il tag (`git tag v0.1.0`).
+1. Pubblicare tag e commit (`git push origin v0.1.0`).
 
-#### Tool Web e Browser (NOVITÀ!) 🌐
-- 🌐 **Apertura browser** con URL specifici
-- 🔍 **Ricerca web Google** automatica
-- 🗺️ **Google Maps** per luoghi e indicazioni
-- 🎥 **YouTube** ricerca video e tutorial
-- � **Visualizzazione documenti** locali
+La pipeline GitHub Actions produce automaticamente i pacchetti per Windows, macOS (DMG universale), Linux (tar.gz, DEB, RPM) e l'APK Android (architetture arm64-v8a, armeabi-v7a, x86_64).
 
-#### Funzionalità Avanzate
-- 🔄 **Ciclo agentico autonomo** con iterazioni multiple
-- 🧠 **Riconoscimento azioni complesse** (es. "mostrami il meteo")
-- 🛡️ **Sistema di sicurezza** con conferme per operazioni pericolose
-- 📝 **Log operazioni** visibili in tempo reale nella chat
-- 🎯 **Task multi-step** automatici
+## Contribuire in Sicurezza
 
-#### Tool MCP SQL Server 🗄️ (NUOVO!)
-- 🔌 **Connessione SQL Server** con autenticazione Windows/SQL
-- 🔍 **Query READ-ONLY** su database gestionali
-- 📊 **Analisi dati** e generazione report
-- 🛡️ **Sicurezza garantita** - Solo SELECT, nessuna modifica dati
-- 💼 **Windows Domain Support** - Usa credenziali utente dominio
-- 🖥️ **UI Configurazione** - Interfaccia grafica per setup database
+1. Effettuare il fork del repository e clonare la copia locale.
+1. Creare un branch descrittivo (`feature/...`, `fix/...`, `docs/...`).
+1. Installare e testare il progetto (`cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt`).
+1. Stendere commit conformi a [Conventional Commits](https://www.conventionalcommits.org/).
+1. Sincronizzarsi con upstream (`git fetch upstream && git rebase upstream/master`) e aprire una pull request completa di descrizione, motivazione, screenshot (per modifiche UI) e indicazione di eventuali breaking change.
 
-**[📖 Documentazione Completa Modalità Agente](AGENT_FEATURES.md)**  
-**[🌐 Guida Tool Web e Browser](AGENT_WEB_TOOLS.md)**  
-**[🗄️ Guida MCP SQL Server](MCP_SQL_GUIDE.md)**  
-**[🧪 Esempi e Test Prompts](AGENT_TEST_PROMPTS.md)**
+### Linee guida di sicurezza
 
-## Esempio d'uso
+- Evitare il commit di credenziali, token o dati personali.
+- Mantenere i commit compatti e ben focalizzati.
+- Documentare le decisioni tecniche rilevanti.
+- In caso di vulnerabilità, contattare privatamente [me@francescozanti.dev](mailto:me@francescozanti.dev) fornendo descrizione, passi di riproduzione, impatto e possibili mitigazioni. Il maintainer risponde entro 48 ore.
 
-1. Avvia Ollama: `ollama serve`
-2. Esegui MatePro: `cd src-tauri && cargo run --release`
-3. L'app scansionerà automaticamente la rete per trovare server Ollama
-4. Seleziona un server dalla lista o inserisci un URL personalizzato
-5. Scegli un modello dalla lista
-6. Inizia a chattare!
+## Supporto e Domande
 
-## Dipendenze
-
-- `tauri` v2 - Framework desktop cross-platform
-- `tauri-plugin-shell` - Operazioni shell
-- `tauri-plugin-opener` - Apertura URL e file
-- `reqwest` - Client HTTP per comunicare con l'API Ollama
-- `serde` / `serde_json` - Serializzazione/deserializzazione JSON
-- `tokio` - Runtime asincrono
-- `anyhow` - Gestione errori semplificata
-- `local-ip-address` - Rilevamento IP locale per scansione rete
-- `tiberius` - Driver SQL Server nativo
-
-## Release
-
-Per creare una nuova release:
-
-1. Aggiorna la versione in `src-tauri/Cargo.toml` e `src-tauri/tauri.conf.json`
-2. Committa le modifiche: `git commit -am "Release v0.1.0"`
-3. Crea un tag: `git tag v0.1.0`
-4. Pusha il tag: `git push origin v0.1.0`
-
-GitHub Actions creerà automaticamente:
-
-- 📦 Binario Windows (ZIP)
-- 🍎 DMG universale per macOS (Intel + Apple Silicon)
-- 🐧 Binario Linux (tar.gz)
-- 📦 Pacchetto DEB per Debian/Ubuntu
-- 📦 Pacchetto RPM per Fedora/RHEL/CentOS
-- 📱 APK per Android (arm64-v8a, armeabi-v7a, x86_64)
-
-## 🤝 Come Contribuire
-
-Contributi, bug report e richieste di nuove funzionalità sono benvenuti! Segui questi passaggi per contribuire in modo sicuro:
-
-### 1️⃣ Fork e Clone
-
-```bash
-# Fai il fork del repository su GitHub, poi:
-git clone https://github.com/TUO_USERNAME/MatePro.git
-cd MatePro
-git remote add upstream https://github.com/FrancescoZanti/MatePro.git
-```
-
-### 2️⃣ Crea un Branch
-
-Usa nomi descrittivi per i branch:
-
-```bash
-# Per nuove funzionalità
-git checkout -b feature/nome-funzionalita
-
-# Per fix di bug
-git checkout -b fix/descrizione-bug
-
-# Per miglioramenti documentazione
-git checkout -b docs/descrizione-modifica
-```
-
-### 3️⃣ Sviluppa e Testa
-
-```bash
-# Installa le dipendenze
-cargo build
-
-# Esegui i test (se presenti)
-cargo test
-
-# Verifica il codice
-cargo clippy -- -D warnings
-
-# Formatta il codice
-cargo fmt
-```
-
-### 4️⃣ Commit con Conventional Commits
-
-Usa messaggi di commit chiari e descrittivi seguendo [Conventional Commits](https://www.conventionalcommits.org/):
-
-```bash
-# Esempi di commit validi
-git commit -m "feat: aggiungi supporto per file JSON"
-git commit -m "fix: risolvi crash su caricamento PDF corrotti"
-git commit -m "docs: aggiorna README con nuove istruzioni"
-git commit -m "style: migliora spaziatura nell'interfaccia chat"
-git commit -m "refactor: ottimizza parsing dei modelli"
-git commit -m "perf: migliora velocità di scansione rete"
-```
-
-**Prefissi comuni:**
-- `feat:` Nuova funzionalità
-- `fix:` Correzione bug
-- `docs:` Documentazione
-- `style:` Formattazione, UI/UX
-- `refactor:` Refactoring codice
-- `perf:` Miglioramenti performance
-- `test:` Aggiunta/modifica test
-- `chore:` Manutenzione, dipendenze
-
-### 5️⃣ Push e Pull Request
-
-```bash
-# Sincronizza con upstream prima di pushare
-git fetch upstream
-git rebase upstream/master
-
-# Pusha sul tuo fork
-git push origin nome-del-tuo-branch
-```
-
-Poi su GitHub:
-1. Vai al tuo fork e clicca **"New Pull Request"**
-2. Compila il template della PR con:
-   - **Descrizione** chiara delle modifiche
-   - **Motivazione** del cambiamento
-   - **Screenshot** (se modifiche UI)
-   - **Breaking changes** (se presenti)
-3. Assicurati che tutti i check CI passino ✅
-
-### 🔒 Best Practices di Sicurezza
-
-- ✅ **NON** committare mai credenziali, token o API keys
-- ✅ **NON** includere dati personali o sensibili
-- ✅ Testa sempre le modifiche localmente prima di pushare
-- ✅ Mantieni i commit piccoli e focalizzati
-- ✅ Documenta le modifiche complesse
-- ✅ Rispetta il codice esistente e le convenzioni del progetto
-- ✅ Segnala vulnerabilità di sicurezza privatamente (vedi sotto)
-
-### 🔐 Segnalare Vulnerabilità di Sicurezza
-
-**NON** aprire issue pubbliche per vulnerabilità di sicurezza.
-
-Invece:
-1. Invia una mail a: **[me@francescozanti.dev](mailto:me@francescozanti.dev)**
-2. Includi:
-   - Descrizione dettagliata della vulnerabilità
-   - Passi per riprodurla
-   - Possibile impatto
-   - Suggerimenti per la risoluzione (se disponibili)
-3. Attendi una risposta entro 48 ore
-
-### 📋 Checklist Prima della PR
-
-- [ ] Il codice compila senza errori (`cargo build`)
-- [ ] Tutti i test passano (`cargo test`)
-- [ ] Il codice è formattato (`cargo fmt`)
-- [ ] Nessun warning da clippy (`cargo clippy`)
-- [ ] Documentazione aggiornata se necessario
-- [ ] Commit seguono Conventional Commits
-- [ ] Branch è sincronizzato con `upstream/master`
-- [ ] Screenshot aggiunti per modifiche UI
-
-### 💡 Idee per Contribuire
-
-Non sai da dove iniziare? Ecco alcune idee:
-
-- 📝 Migliorare la documentazione
-- 🌍 Aggiungere traduzioni (i18n)
-- 🐛 Risolvere issue aperti
-- ✨ Implementare funzionalità richieste
-- 🎨 Migliorare UI/UX
-- ⚡ Ottimizzare performance
-- 🧪 Aggiungere test
-- 📦 Supportare nuovi formati file
-
-### ❓ Domande?
-
-Hai domande sul progetto o su come contribuire?
-- Apri una **Discussion** su GitHub
-- Contatta via email: **me@francescozanti.dev**
+- Aprire una Discussion su GitHub per quesiti generali o proposte.
+- Segnalare bug e richieste di funzionalità tramite issue.
+- Scrivere a [me@francescozanti.dev](mailto:me@francescozanti.dev) per supporto dedicato o casi urgenti.
 
 ## Licenza
 
-MIT License - vedi file [LICENSE](LICENSE)
+Il progetto è distribuito con licenza MIT. Il testo completo è disponibile nel file `LICENSE`.
