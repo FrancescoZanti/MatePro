@@ -5,9 +5,13 @@
 )]
 
 mod agent;
+mod aiconnect;
 mod mcp_sql;
 
 use agent::{AgentSystem, ToolCall, ToolResult};
+use aiconnect::{
+    AiConnectClient, AiConnectNode, AuthMethod, BackendConfig, BackendKind, DiscoveredService,
+};
 use anyhow::Result;
 use calamine::{open_workbook, Ods, Reader, Xls, Xlsx};
 use lopdf::Document;
@@ -116,6 +120,8 @@ struct AppState {
     agent_system: Mutex<AgentSystem>,
     sql_manager: mcp_sql::SqlConnectionManager,
     last_sql_connection_id: Arc<Mutex<Option<String>>>,
+    aiconnect_client: AiConnectClient,
+    backend_config: Mutex<BackendConfig>,
 }
 
 impl Default for AppState {
@@ -131,6 +137,8 @@ impl Default for AppState {
             agent_system: Mutex::new(agent),
             sql_manager,
             last_sql_connection_id,
+            aiconnect_client: AiConnectClient::new(),
+            backend_config: Mutex::new(BackendConfig::default()),
         }
     }
 }
@@ -826,6 +834,204 @@ fn get_user_profile() -> UserProfile {
     }
 }
 
+// ============ AICONNECT COMMANDS ============
+
+/// Discovery result for AIConnect and Ollama services
+#[derive(Debug, Clone, Serialize)]
+struct DiscoveryResult {
+    aiconnect_found: bool,
+    aiconnect_services: Vec<DiscoveredService>,
+    ollama_servers: Vec<String>,
+    recommended_backend: BackendKind,
+}
+
+/// Scan network for AIConnect and Ollama services
+#[tauri::command]
+async fn scan_services() -> DiscoveryResult {
+    use std::time::Duration;
+
+    let mut aiconnect_services = Vec::new();
+    let mut ollama_servers = Vec::new();
+    let mut aiconnect_found = false;
+
+    // Try mDNS discovery for AIConnect (with 2 second timeout)
+    if let Ok(services) = aiconnect::discover_aiconnect(Duration::from_secs(2)).await {
+        aiconnect_services = services;
+        aiconnect_found = !aiconnect_services.is_empty();
+    }
+
+    // Check localhost Ollama
+    if check_server("http://localhost:11434").await {
+        ollama_servers.push("http://localhost:11434".to_string());
+    }
+
+    // Check 127.0.0.1
+    if check_server("http://127.0.0.1:11434").await
+        && !ollama_servers.contains(&"http://127.0.0.1:11434".to_string())
+    {
+        ollama_servers.push("http://127.0.0.1:11434".to_string());
+    }
+
+    // Determine recommended backend
+    let recommended_backend = if aiconnect_found {
+        BackendKind::AiConnect
+    } else {
+        BackendKind::OllamaLocal
+    };
+
+    DiscoveryResult {
+        aiconnect_found,
+        aiconnect_services,
+        ollama_servers,
+        recommended_backend,
+    }
+}
+
+/// Get the current backend configuration
+#[tauri::command]
+async fn get_backend_config(state: State<'_, Arc<AppState>>) -> Result<BackendConfig, String> {
+    let config = state.backend_config.lock().await;
+    Ok(config.clone())
+}
+
+/// Set the backend configuration
+#[tauri::command]
+async fn set_backend_config(
+    state: State<'_, Arc<AppState>>,
+    config: BackendConfig,
+) -> Result<(), String> {
+    // Update the backend config
+    {
+        let mut backend = state.backend_config.lock().await;
+        *backend = config.clone();
+    }
+
+    // Also update the AIConnect client configuration
+    state.aiconnect_client.set_config(config.clone()).await;
+
+    // Update ollama_url for backward compatibility
+    {
+        let mut ollama_url = state.ollama_url.lock().await;
+        *ollama_url = config.endpoint;
+    }
+
+    Ok(())
+}
+
+/// Connect to AIConnect backend
+#[tauri::command]
+async fn connect_aiconnect(
+    state: State<'_, Arc<AppState>>,
+    endpoint: String,
+    auth_method: Option<String>,
+    token: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+) -> Result<(), String> {
+    // Build auth method
+    let auth = match auth_method.as_deref() {
+        Some("bearer") => {
+            let token = token.ok_or("Token richiesto per autenticazione Bearer")?;
+            AuthMethod::Bearer { token }
+        }
+        Some("basic") => {
+            let username = username.ok_or("Username richiesto per autenticazione Basic")?;
+            let password = password.ok_or("Password richiesta per autenticazione Basic")?;
+            AuthMethod::Basic { username, password }
+        }
+        _ => AuthMethod::None,
+    };
+
+    // Check if AIConnect is reachable
+    if !aiconnect::check_aiconnect_health(&endpoint, &auth).await {
+        return Err("Impossibile connettersi ad AIConnect".to_string());
+    }
+
+    // Update configuration
+    let config = BackendConfig {
+        kind: BackendKind::AiConnect,
+        endpoint: endpoint.clone(),
+        auth,
+        aiconnect_service: None,
+    };
+
+    // Update state
+    {
+        let mut backend = state.backend_config.lock().await;
+        *backend = config.clone();
+    }
+
+    state.aiconnect_client.set_config(config).await;
+
+    // Update ollama_url for backward compatibility with chat/models
+    {
+        let mut ollama_url = state.ollama_url.lock().await;
+        *ollama_url = endpoint;
+    }
+
+    Ok(())
+}
+
+/// Get AIConnect nodes (only works when backend is AIConnect)
+#[tauri::command]
+async fn get_aiconnect_nodes(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<AiConnectNode>, String> {
+    let config = state.backend_config.lock().await;
+
+    if config.kind != BackendKind::AiConnect {
+        return Err("Questa funzione è disponibile solo con backend AIConnect".to_string());
+    }
+
+    drop(config);
+
+    state
+        .aiconnect_client
+        .get_nodes()
+        .await
+        .map_err(|e| format!("Errore recupero nodi AIConnect: {}", e))
+}
+
+/// Check backend health (AIConnect or Ollama)
+#[tauri::command]
+async fn check_backend_health(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
+    let config = state.backend_config.lock().await;
+
+    let is_healthy = match config.kind {
+        BackendKind::AiConnect => {
+            aiconnect::check_aiconnect_health(&config.endpoint, &config.auth).await
+        }
+        BackendKind::OllamaLocal => aiconnect::check_ollama_health(&config.endpoint).await,
+    };
+
+    Ok(is_healthy)
+}
+
+/// Auto-discover and configure the best available backend
+#[tauri::command]
+async fn auto_configure(state: State<'_, Arc<AppState>>) -> Result<BackendConfig, String> {
+    use std::time::Duration;
+
+    let fallback_url = "http://localhost:11434";
+    let config = aiconnect::auto_configure_backend(Duration::from_secs(3), fallback_url).await;
+
+    // Update state
+    {
+        let mut backend = state.backend_config.lock().await;
+        *backend = config.clone();
+    }
+
+    state.aiconnect_client.set_config(config.clone()).await;
+
+    // Update ollama_url for backward compatibility
+    {
+        let mut ollama_url = state.ollama_url.lock().await;
+        *ollama_url = config.endpoint.clone();
+    }
+
+    Ok(config)
+}
+
 // ============ MAIN ============
 
 fn main() {
@@ -855,6 +1061,14 @@ fn main() {
             get_user_profile,
             check_for_updates,
             download_and_install_update,
+            // AIConnect commands
+            scan_services,
+            get_backend_config,
+            set_backend_config,
+            connect_aiconnect,
+            get_aiconnect_nodes,
+            check_backend_health,
+            auto_configure,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

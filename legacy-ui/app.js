@@ -21,6 +21,10 @@ const state = {
     isProcessing: false,
     greetingMessage: null,
     greetingShown: false,
+    // AIConnect state
+    backendKind: 'ollama_local',
+    aiconnectFound: false,
+    aiconnectServices: [],
 };
 
 // ============ DOM ELEMENTS ============
@@ -41,6 +45,7 @@ const elements = {
     setupError: document.getElementById('setup-error'),
     loadingText: document.getElementById('loading-text'),
     greetingBanner: document.getElementById('greeting-banner'),
+    aiconnectStatus: document.getElementById('aiconnect-status'),
     
     // Chat
     modelSelector: document.getElementById('model-selector'),
@@ -58,6 +63,7 @@ const elements = {
     attachBtn: document.getElementById('attach-btn'),
     sendBtn: document.getElementById('send-btn'),
     fileInput: document.getElementById('file-input'),
+    backendIndicator: document.getElementById('backend-indicator'),
     
     // SQL Modal
     sqlModal: document.getElementById('sql-modal'),
@@ -506,37 +512,146 @@ async function checkForUpdates() {
 
 // ============ NETWORK SCAN ============
 
+function updateAiConnectStatus(found, services) {
+    state.aiconnectFound = found;
+    state.aiconnectServices = services;
+    
+    if (elements.aiconnectStatus) {
+        if (found) {
+            elements.aiconnectStatus.textContent = '🤖 AIConnect trovato';
+            elements.aiconnectStatus.className = 'aiconnect-status found';
+            elements.aiconnectStatus.classList.remove('hidden');
+        } else {
+            elements.aiconnectStatus.textContent = '';
+            elements.aiconnectStatus.classList.add('hidden');
+        }
+    }
+}
+
+function updateBackendIndicator() {
+    if (elements.backendIndicator) {
+        if (state.backendKind === 'ai_connect') {
+            elements.backendIndicator.textContent = '🤖 AIConnect';
+            elements.backendIndicator.className = 'backend-indicator aiconnect';
+        } else {
+            elements.backendIndicator.textContent = '🦙 Ollama';
+            elements.backendIndicator.className = 'backend-indicator ollama';
+        }
+        elements.backendIndicator.classList.remove('hidden');
+    }
+}
+
 async function scanNetwork() {
     elements.scanningIndicator.classList.remove('hidden');
     elements.serverList.classList.add('hidden');
     
     try {
-        const servers = await invoke('scan_network');
+        // Try the new scan_services command first (AIConnect + Ollama)
+        let discoveryResult = null;
+        try {
+            discoveryResult = await invoke('scan_services');
+        } catch (e) {
+            console.log('scan_services not available, falling back to scan_network');
+        }
         
-        if (servers.length > 0) {
-            elements.servers.innerHTML = '';
-            servers.forEach(server => {
-                const isLocal = server.includes('localhost') || server.includes('127.0.0.1');
-                const option = document.createElement('div');
-                option.className = 'server-option';
-                option.textContent = `${isLocal ? '🏠' : '🌐'} ${server}`;
-                option.dataset.url = server;
-                
-                if (server === elements.serverUrl.value) {
-                    option.classList.add('selected');
-                }
-                
-                option.addEventListener('click', () => {
-                    document.querySelectorAll('.server-option').forEach(el => el.classList.remove('selected'));
-                    option.classList.add('selected');
-                    elements.serverUrl.value = server;
+        if (discoveryResult) {
+            // Update AIConnect status
+            updateAiConnectStatus(
+                discoveryResult.aiconnect_found,
+                discoveryResult.aiconnect_services
+            );
+            
+            // Update backend kind
+            state.backendKind = discoveryResult.recommended_backend;
+            
+            // Build server list
+            const servers = [];
+            
+            // Add AIConnect services first if found
+            if (discoveryResult.aiconnect_found && discoveryResult.aiconnect_services.length > 0) {
+                discoveryResult.aiconnect_services.forEach(service => {
+                    const url = `http://${service.host}:${service.port}`;
+                    if (!servers.includes(url)) {
+                        servers.push(url);
+                    }
                 });
-                
-                elements.servers.appendChild(option);
+            }
+            
+            // Add Ollama servers
+            discoveryResult.ollama_servers.forEach(server => {
+                if (!servers.includes(server)) {
+                    servers.push(server);
+                }
             });
             
-            elements.serverList.classList.remove('hidden');
-            elements.serverUrl.value = servers[0];
+            if (servers.length > 0) {
+                elements.servers.innerHTML = '';
+                servers.forEach((server, index) => {
+                    const isAiConnect = discoveryResult.aiconnect_services.some(
+                        s => `http://${s.host}:${s.port}` === server
+                    );
+                    const isLocal = server.includes('localhost') || server.includes('127.0.0.1');
+                    const option = document.createElement('div');
+                    option.className = 'server-option';
+                    
+                    let icon = isLocal ? '🏠' : '🌐';
+                    if (isAiConnect) {
+                        icon = '🤖';
+                    }
+                    
+                    option.textContent = `${icon} ${server}`;
+                    option.dataset.url = server;
+                    option.dataset.isAiconnect = isAiConnect ? 'true' : 'false';
+                    
+                    if (server === elements.serverUrl.value || index === 0) {
+                        option.classList.add('selected');
+                        if (index === 0) {
+                            elements.serverUrl.value = server;
+                        }
+                    }
+                    
+                    option.addEventListener('click', () => {
+                        document.querySelectorAll('.server-option').forEach(el => el.classList.remove('selected'));
+                        option.classList.add('selected');
+                        elements.serverUrl.value = server;
+                        // Update backend kind based on selection
+                        state.backendKind = option.dataset.isAiconnect === 'true' ? 'ai_connect' : 'ollama_local';
+                    });
+                    
+                    elements.servers.appendChild(option);
+                });
+                
+                elements.serverList.classList.remove('hidden');
+            }
+        } else {
+            // Fallback to legacy scan_network
+            const servers = await invoke('scan_network');
+            
+            if (servers.length > 0) {
+                elements.servers.innerHTML = '';
+                servers.forEach(server => {
+                    const isLocal = server.includes('localhost') || server.includes('127.0.0.1');
+                    const option = document.createElement('div');
+                    option.className = 'server-option';
+                    option.textContent = `${isLocal ? '🏠' : '🌐'} ${server}`;
+                    option.dataset.url = server;
+                    
+                    if (server === elements.serverUrl.value) {
+                        option.classList.add('selected');
+                    }
+                    
+                    option.addEventListener('click', () => {
+                        document.querySelectorAll('.server-option').forEach(el => el.classList.remove('selected'));
+                        option.classList.add('selected');
+                        elements.serverUrl.value = server;
+                    });
+                    
+                    elements.servers.appendChild(option);
+                });
+                
+                elements.serverList.classList.remove('hidden');
+                elements.serverUrl.value = servers[0];
+            }
         }
     } catch (error) {
         console.error('Scan error:', error);
@@ -557,11 +672,36 @@ async function connect() {
     hideError();
     elements.connectBtn.disabled = true;
     showScreen('loading-screen');
-    elements.loadingText.textContent = 'Connessione al server...';
+    
+    // Check if connecting to AIConnect
+    const isAiConnect = state.backendKind === 'ai_connect';
+    
+    if (isAiConnect) {
+        elements.loadingText.textContent = 'Connessione ad AIConnect...';
+    } else {
+        elements.loadingText.textContent = 'Connessione al server...';
+    }
     
     try {
+        // Set backend configuration
+        const config = {
+            kind: isAiConnect ? 'ai_connect' : 'ollama_local',
+            endpoint: url,
+            auth: { none: null },
+            aiconnect_service: null,
+        };
+        
+        try {
+            await invoke('set_backend_config', { config });
+        } catch (e) {
+            console.log('set_backend_config not available, using legacy connect');
+        }
+        
         await invoke('connect_to_server', { url });
         await loadModels();
+        
+        // Update backend indicator after successful connection
+        updateBackendIndicator();
     } catch (error) {
         showScreen('setup-screen');
         showError(error);
