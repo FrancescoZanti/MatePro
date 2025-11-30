@@ -70,6 +70,9 @@ base64 = "0.22"
 # Async utilities
 futures-util = "0.3"
 
+# mDNS Service Discovery for AIConnect
+mdns-sd = "0.17"
+
 [target.'cfg(windows)'.dependencies]
 tiberius = { version = "0.12", default-features = false, features = ["sql-browser-tokio", "chrono", "rust_decimal", "bigdecimal", "tds73", "rustls", "winauth"] }
 

@@ -14,19 +14,20 @@
                 <h1>🤖 MatePro</h1>
                 <p class="subtitle">Connettiti a un'istanza Ollama per iniziare</p>
                 <div id="greeting-banner" class="greeting-banner hidden"></div>
+                <div id="aiconnect-status" class="aiconnect-status hidden"></div>
                 
                 <div id="scanning-indicator" class="scanning hidden">
                     <div class="spinner"></div>
-                    <span>Ricerca server Ollama in corso...</span>
+                    <span>Ricerca server in corso...</span>
                 </div>
                 
                 <div id="server-list" class="server-list hidden">
-                    <label>Server Ollama trovati:</label>
+                    <label>Server disponibili:</label>
                     <div id="servers"></div>
                 </div>
                 
                 <div class="input-group">
-                    <label>URL del server Ollama:</label>
+                    <label>URL del server:</label>
                     <input type="text" id="server-url" value="http://localhost:11434" placeholder="http://localhost:11434">
                 </div>
                 
@@ -55,6 +56,7 @@
                     <span class="chat-icon">💬</span>
                        <span class="app-title">MatePro</span>
                        <span id="version-indicator" class="version-indicator hidden"></span>
+                       <span id="backend-indicator" class="backend-indicator hidden"></span>
                     <select id="model-selector">
                         <option value="">Seleziona modello...</option>
                     </select>
