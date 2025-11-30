@@ -285,13 +285,20 @@ pub async fn discover_services(
     let deadline = std::time::Instant::now() + timeout;
 
     loop {
-        if std::time::Instant::now() > deadline {
+        let now = std::time::Instant::now();
+        if now > deadline {
             break;
         }
 
+        // Use checked subtraction to avoid potential panics
         let remaining = deadline
-            .duration_since(std::time::Instant::now())
+            .checked_duration_since(now)
+            .unwrap_or(Duration::from_millis(0))
             .min(Duration::from_millis(100));
+
+        if remaining.is_zero() {
+            break;
+        }
 
         match tokio::time::timeout(remaining, async {
             receiver.recv().ok()
@@ -360,10 +367,20 @@ pub async fn auto_configure_backend(
             let endpoint = service.base_url();
 
             // Check if AIConnect is reachable
-            let client = reqwest::Client::builder()
+            let client = match reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()
-                .unwrap();
+            {
+                Ok(c) => c,
+                Err(_) => {
+                    return BackendConfig {
+                        kind: BackendKind::OllamaLocal,
+                        endpoint: fallback_ollama_url.to_string(),
+                        auth: AuthMethod::None,
+                        aiconnect_service: None,
+                    };
+                }
+            };
 
             let health_url = format!("{}/api/health", endpoint);
             if let Ok(response) = client.get(&health_url).send().await {
@@ -390,10 +407,13 @@ pub async fn auto_configure_backend(
 
 /// Check if AIConnect is available at the given endpoint
 pub async fn check_aiconnect_health(endpoint: &str, auth: &AuthMethod) -> bool {
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
-        .unwrap();
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
 
     let url = format!("{}/api/health", endpoint);
     let headers = AiConnectClient::build_auth_headers(auth);
@@ -406,10 +426,13 @@ pub async fn check_aiconnect_health(endpoint: &str, auth: &AuthMethod) -> bool {
 
 /// Check if Ollama is available at the given endpoint
 pub async fn check_ollama_health(endpoint: &str) -> bool {
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
-        .unwrap();
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
 
     let url = format!("{}/api/tags", endpoint);
 
