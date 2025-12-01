@@ -23,10 +23,15 @@
 - API per controllo nodi AIConnect
 
 #### Tool Office (4 nuovi)
-17. **text_translate** - Traduzione testo con LLM
-18. **document_summarize** - Riassunto documenti caricati
-19. **excel_improve** - Miglioramento dati Excel
-20. **word_improve** - Miglioramento documenti Word
+11. **text_translate** - Traduzione testo con LLM
+12. **document_summarize** - Riassunto documenti caricati
+13. **excel_improve** - Miglioramento dati Excel
+14. **word_improve** - Miglioramento documenti Word
+
+#### Deprecazioni
+- **RIMOSSO:** Tool `document_view` - Utilizzare `file_read` per leggere contenuti file
+
+> **Nota:** Con la rimozione di document_view e l'aggiunta dei tool Office, la numerazione dei tool SQL è cambiata da 12-16 a 15-19.
 
 ### 📦 Dipendenze Aggiunte
 - `mdns-sd` 0.17 - Service discovery mDNS
@@ -230,12 +235,14 @@ matepro/
 5. **process_list** - Lista processi attivi nel sistema
 6. **system_info** - Informazioni hardware e sistema
 
-#### Tool Web e Browser (5) 🆕
+#### Tool Web e Browser (4) 🆕
 7. **browser_open** - Apre URL nel browser predefinito
 8. **web_search** - Ricerca Google con query parametrizzata
 9. **map_open** - Apre Google Maps per località o indicazioni
 10. **youtube_search** - Cerca video su YouTube
-11. **document_view** - Apre file locali con programma predefinito
+
+> **Nota:** Il tool `document_view` è stato deprecato e rimosso in v0.0.12.
+> Utilizzare `file_read` per leggere contenuti file.
 
 #### Tool MCP SQL Server (5) 🆕🗄️
 12. **sql_connect** - Connessione SQL Server (Windows/SQL Auth)
