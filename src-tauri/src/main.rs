@@ -16,7 +16,7 @@ use aiconnect::{
 use anyhow::Result;
 use calamine::{open_workbook, Ods, Reader, Xls, Xlsx};
 use local_storage::{
-    ConversationEntry, CustomSystemPrompt, LocalMemory, MemoryMessage,
+    CustomSystemPrompt, LocalMemory, MemoryMessage,
 };
 use lopdf::Document;
 use serde::{Deserialize, Serialize};
