@@ -860,16 +860,22 @@ async fn scan_services() -> DiscoveryResult {
         aiconnect_found = !aiconnect_services.is_empty();
     }
 
-    // Check localhost Ollama
-    if check_server("http://localhost:11434").await {
-        ollama_servers.push("http://localhost:11434".to_string());
+    // Discover Ollama instances advertised via mDNS
+    if let Ok(services) = aiconnect::discover_ollama(Duration::from_secs(2)).await {
+        for service in services {
+            let url = service.base_url();
+            if check_server(&url).await && !ollama_servers.contains(&url) {
+                ollama_servers.push(url);
+            }
+        }
     }
 
-    // Check 127.0.0.1
-    if check_server("http://127.0.0.1:11434").await
-        && !ollama_servers.contains(&"http://127.0.0.1:11434".to_string())
-    {
-        ollama_servers.push("http://127.0.0.1:11434".to_string());
+    // Fall back to subnet scan (includes localhost) to preserve legacy behaviour
+    let scanned_servers = scan_network().await;
+    for server in scanned_servers {
+        if !ollama_servers.contains(&server) {
+            ollama_servers.push(server);
+        }
     }
 
     // Determine recommended backend
