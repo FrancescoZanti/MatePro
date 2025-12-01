@@ -16,32 +16,22 @@ pub const AICONNECT_SERVICE_TYPE: &str = "_aiconnect._tcp.local.";
 pub const OLLAMA_SERVICE_TYPE: &str = "_ollama._tcp.local.";
 
 /// Backend kind for the application
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendKind {
     AiConnect,
+    #[default]
     OllamaLocal,
 }
 
-impl Default for BackendKind {
-    fn default() -> Self {
-        BackendKind::OllamaLocal
-    }
-}
-
 /// Authentication method for AIConnect
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthMethod {
+    #[default]
     None,
     Bearer { token: String },
     Basic { username: String, password: String },
-}
-
-impl Default for AuthMethod {
-    fn default() -> Self {
-        AuthMethod::None
-    }
 }
 
 /// Discovered service information

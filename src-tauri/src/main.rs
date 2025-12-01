@@ -6,6 +6,7 @@
 
 mod agent;
 mod aiconnect;
+mod local_storage;
 mod mcp_sql;
 
 use agent::{AgentSystem, ToolCall, ToolResult};
@@ -14,6 +15,9 @@ use aiconnect::{
 };
 use anyhow::Result;
 use calamine::{open_workbook, Ods, Reader, Xls, Xlsx};
+use local_storage::{
+    CustomSystemPrompt, LocalMemory, MemoryMessage,
+};
 use lopdf::Document;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -834,6 +838,69 @@ fn get_user_profile() -> UserProfile {
     }
 }
 
+// ============ LOCAL STORAGE COMMANDS ============
+
+/// Load conversation memory from local storage
+#[tauri::command]
+fn load_memory() -> Result<LocalMemory, String> {
+    local_storage::load_memory().map_err(|e| e.to_string())
+}
+
+/// Save conversation memory to local storage
+#[tauri::command]
+fn save_memory(memory: LocalMemory) -> Result<(), String> {
+    local_storage::save_memory(&memory).map_err(|e| e.to_string())
+}
+
+/// Load custom system prompt from local storage
+#[tauri::command]
+fn load_custom_system_prompt() -> Result<CustomSystemPrompt, String> {
+    local_storage::load_custom_system_prompt().map_err(|e| e.to_string())
+}
+
+/// Save custom system prompt to local storage
+#[tauri::command]
+fn save_custom_system_prompt(prompt: CustomSystemPrompt) -> Result<(), String> {
+    local_storage::save_custom_system_prompt(&prompt).map_err(|e| e.to_string())
+}
+
+/// Add a new conversation to memory
+#[tauri::command]
+fn add_conversation_to_memory(
+    title: String,
+    messages: Vec<MemoryMessage>,
+    model: Option<String>,
+) -> Result<String, String> {
+    local_storage::add_conversation(title, messages, model).map_err(|e| e.to_string())
+}
+
+/// Update an existing conversation in memory
+#[tauri::command]
+fn update_conversation_in_memory(
+    id: String,
+    messages: Vec<MemoryMessage>,
+) -> Result<(), String> {
+    local_storage::update_conversation(&id, messages).map_err(|e| e.to_string())
+}
+
+/// Delete a conversation from memory
+#[tauri::command]
+fn delete_conversation_from_memory(id: String) -> Result<(), String> {
+    local_storage::delete_conversation(&id).map_err(|e| e.to_string())
+}
+
+/// Clear all conversations from memory
+#[tauri::command]
+fn clear_all_conversations() -> Result<(), String> {
+    local_storage::clear_all_conversations().map_err(|e| e.to_string())
+}
+
+/// Get the path to the data directory
+#[tauri::command]
+fn get_data_directory() -> Result<String, String> {
+    local_storage::get_data_directory().map_err(|e| e.to_string())
+}
+
 // ============ AICONNECT COMMANDS ============
 
 /// Discovery result for AIConnect and Ollama services
@@ -1067,6 +1134,16 @@ fn main() {
             get_user_profile,
             check_for_updates,
             download_and_install_update,
+            // Local storage commands
+            load_memory,
+            save_memory,
+            load_custom_system_prompt,
+            save_custom_system_prompt,
+            add_conversation_to_memory,
+            update_conversation_in_memory,
+            delete_conversation_from_memory,
+            clear_all_conversations,
+            get_data_directory,
             // AIConnect commands
             scan_services,
             get_backend_config,
