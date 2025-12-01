@@ -25,6 +25,13 @@ const state = {
     backendKind: 'ollama_local',
     aiconnectFound: false,
     aiconnectServices: [],
+    // Local storage state
+    customSystemPrompt: {
+        enabled: false,
+        content: '',
+    },
+    currentConversationId: null,
+    memoryConversations: [],
 };
 
 // ============ DOM ELEMENTS ============
@@ -84,6 +91,26 @@ const elements = {
     confirmAllow: document.getElementById('confirm-allow'),
     confirmCancel: document.getElementById('confirm-cancel'),
     versionIndicator: document.getElementById('version-indicator'),
+    
+    // Settings Modal
+    settingsBtn: document.getElementById('settings-btn'),
+    settingsModal: document.getElementById('settings-modal'),
+    closeSettingsModal: document.getElementById('close-settings-modal'),
+    closeSettingsBtn: document.getElementById('close-settings-btn'),
+    customPromptEnabled: document.getElementById('custom-prompt-enabled'),
+    customPromptContent: document.getElementById('custom-prompt-content'),
+    settingsStatus: document.getElementById('settings-status'),
+    saveSettingsBtn: document.getElementById('save-settings-btn'),
+    dataDirInfo: document.getElementById('data-dir-info'),
+    dataDirPath: document.getElementById('data-dir-path'),
+    
+    // History Modal
+    historyBtn: document.getElementById('history-btn'),
+    historyModal: document.getElementById('history-modal'),
+    closeHistoryModal: document.getElementById('close-history-modal'),
+    closeHistoryBtn: document.getElementById('close-history-btn'),
+    historyList: document.getElementById('history-list'),
+    clearHistoryBtn: document.getElementById('clear-history-btn'),
 };
 
 const greetingTemplates = {
@@ -838,6 +865,11 @@ async function sendMessage() {
 • Caratteri Unicode: √ ² ³ ∫ ∑ π ∞ ≤ ≥ ≠ ± × ÷
 • Notazione testuale: sqrt(), ^2, ^3, /`;
         
+        // Add custom system prompt if enabled
+        if (state.customSystemPrompt.enabled && state.customSystemPrompt.content.trim()) {
+            systemContent += '\n\n**ISTRUZIONI PERSONALIZZATE DELL\'UTENTE:**\n' + state.customSystemPrompt.content.trim();
+        }
+        
         if (state.agentMode) {
             const toolsDesc = await getToolsDescription();
             systemContent += '\n\n' + toolsDesc;
@@ -908,7 +940,13 @@ async function processChat() {
             if (toolCalls.length > 0) {
                 state.pendingToolCalls = toolCalls;
                 await processNextToolCall();
+            } else {
+                // Save conversation if no more tool calls
+                await saveCurrentConversation();
             }
+        } else {
+            // Save conversation in non-agent mode
+            await saveCurrentConversation();
         }
         
     } catch (error) {
@@ -1005,6 +1043,9 @@ async function continueAgentLoop() {
         if (toolCalls.length > 0) {
             state.pendingToolCalls = toolCalls;
             await processNextToolCall();
+        } else {
+            // Save conversation when agent loop completes
+            await saveCurrentConversation();
         }
         
     } catch (error) {
@@ -1263,15 +1304,323 @@ async function testSqlConnection() {
     elements.testSqlBtn.disabled = false;
 }
 
+// ============ SETTINGS & CUSTOM SYSTEM PROMPT ============
+
+async function loadSettings() {
+    try {
+        const prompt = await invoke('load_custom_system_prompt');
+        state.customSystemPrompt = {
+            enabled: prompt.enabled,
+            content: prompt.content,
+        };
+        
+        // Update UI
+        if (elements.customPromptEnabled) {
+            elements.customPromptEnabled.checked = prompt.enabled;
+        }
+        if (elements.customPromptContent) {
+            elements.customPromptContent.value = prompt.content;
+        }
+    } catch (error) {
+        console.warn('Impossibile caricare le impostazioni:', error);
+    }
+}
+
+async function saveSettings() {
+    const enabled = elements.customPromptEnabled?.checked || false;
+    const content = elements.customPromptContent?.value || '';
+    
+    try {
+        await invoke('save_custom_system_prompt', {
+            prompt: {
+                enabled,
+                content,
+                updated_at: new Date().toISOString(),
+            }
+        });
+        
+        state.customSystemPrompt = { enabled, content };
+        
+        if (elements.settingsStatus) {
+            elements.settingsStatus.className = 'sql-status success';
+            elements.settingsStatus.textContent = '✓ Impostazioni salvate';
+            elements.settingsStatus.classList.remove('hidden');
+            
+            setTimeout(() => {
+                elements.settingsStatus.classList.add('hidden');
+            }, 2000);
+        }
+    } catch (error) {
+        if (elements.settingsStatus) {
+            elements.settingsStatus.className = 'sql-status error';
+            elements.settingsStatus.textContent = `✕ Errore: ${error}`;
+            elements.settingsStatus.classList.remove('hidden');
+        }
+    }
+}
+
+async function showSettingsModal() {
+    await loadSettings();
+    
+    // Try to show the data directory
+    try {
+        const dataDir = await invoke('get_data_directory');
+        if (elements.dataDirPath) {
+            elements.dataDirPath.textContent = dataDir;
+        }
+        if (elements.dataDirInfo) {
+            elements.dataDirInfo.classList.remove('hidden');
+        }
+    } catch (error) {
+        console.warn('Impossibile ottenere la directory dati:', error);
+    }
+    
+    if (elements.settingsModal) {
+        elements.settingsModal.classList.remove('hidden');
+    }
+}
+
+function hideSettingsModal() {
+    if (elements.settingsModal) {
+        elements.settingsModal.classList.add('hidden');
+    }
+    if (elements.settingsStatus) {
+        elements.settingsStatus.classList.add('hidden');
+    }
+}
+
+// ============ CONVERSATION HISTORY ============
+
+async function loadMemory() {
+    try {
+        const memory = await invoke('load_memory');
+        state.memoryConversations = memory.conversations || [];
+    } catch (error) {
+        console.warn('Impossibile caricare la memoria:', error);
+        state.memoryConversations = [];
+    }
+}
+
+async function saveCurrentConversation() {
+    // Only save if there are visible messages
+    const visibleMessages = state.conversation.filter(m => !m.hidden);
+    if (visibleMessages.length < 2) return;
+    
+    // Generate a title from the first user message
+    const firstUserMessage = visibleMessages.find(m => m.role === 'user');
+    const title = firstUserMessage 
+        ? firstUserMessage.content.substring(0, 50) + (firstUserMessage.content.length > 50 ? '...' : '')
+        : 'Conversazione senza titolo';
+    
+    // Convert conversation to memory format
+    const messages = state.conversation.map(m => ({
+        role: m.role,
+        content: m.content,
+        hidden: m.hidden || false,
+        timestamp: m.timestamp || null,
+    }));
+    
+    try {
+        if (state.currentConversationId) {
+            // Update existing conversation
+            await invoke('update_conversation_in_memory', {
+                id: state.currentConversationId,
+                messages,
+            });
+        } else {
+            // Add new conversation
+            const id = await invoke('add_conversation_to_memory', {
+                title,
+                messages,
+                model: state.selectedModel,
+            });
+            state.currentConversationId = id;
+        }
+    } catch (error) {
+        console.warn('Impossibile salvare la conversazione:', error);
+    }
+}
+
+async function loadConversationFromMemory(conversationId) {
+    const conversation = state.memoryConversations.find(c => c.id === conversationId);
+    if (!conversation) return;
+    
+    // Clear current chat
+    state.conversation = [];
+    state.systemPromptAdded = false;
+    state.currentIteration = 0;
+    state.pendingToolCalls = [];
+    state.currentConversationId = conversationId;
+    
+    // Load messages
+    conversation.messages.forEach(m => {
+        state.conversation.push({
+            role: m.role,
+            content: m.content,
+            hidden: m.hidden || false,
+            timestamp: m.timestamp || null,
+        });
+        
+        // Mark system prompt as added if it was in the saved conversation
+        if (m.hidden && m.role === 'user') {
+            state.systemPromptAdded = true;
+        }
+    });
+    
+    // Render messages
+    renderConversation();
+    
+    // Close modal
+    hideHistoryModal();
+}
+
+function renderConversation() {
+    elements.messages.innerHTML = '';
+    
+    const visibleMessages = state.conversation.filter(m => !m.hidden);
+    
+    if (visibleMessages.length === 0) {
+        elements.messages.innerHTML = `
+            <div class="empty-state">
+                <p class="empty-title">Inizia una conversazione</p>
+                <p class="empty-subtitle">Scrivi un messaggio per iniziare</p>
+            </div>
+        `;
+        return;
+    }
+    
+    visibleMessages.forEach(m => {
+        addMessage(m.role, m.content, m.timestamp);
+    });
+}
+
+async function deleteConversationFromMemory(conversationId) {
+    try {
+        await invoke('delete_conversation_from_memory', { id: conversationId });
+        state.memoryConversations = state.memoryConversations.filter(c => c.id !== conversationId);
+        
+        // If we deleted the current conversation, reset
+        if (state.currentConversationId === conversationId) {
+            state.currentConversationId = null;
+        }
+        
+        // Re-render the history list
+        renderHistoryList();
+    } catch (error) {
+        console.warn('Impossibile eliminare la conversazione:', error);
+    }
+}
+
+async function clearAllConversations() {
+    if (!confirm('Sei sicuro di voler eliminare tutta la cronologia delle conversazioni?')) {
+        return;
+    }
+    
+    try {
+        await invoke('clear_all_conversations');
+        state.memoryConversations = [];
+        state.currentConversationId = null;
+        renderHistoryList();
+    } catch (error) {
+        console.warn('Impossibile cancellare la cronologia:', error);
+    }
+}
+
+function renderHistoryList() {
+    if (!elements.historyList) return;
+    
+    if (state.memoryConversations.length === 0) {
+        elements.historyList.innerHTML = `
+            <div class="empty-history">
+                <p>Nessuna conversazione salvata</p>
+                <small>Le conversazioni verranno salvate automaticamente quando le termini</small>
+            </div>
+        `;
+        return;
+    }
+    
+    // Sort by updated_at descending (most recent first)
+    const sorted = [...state.memoryConversations].sort((a, b) => {
+        return new Date(b.updated_at) - new Date(a.updated_at);
+    });
+    
+    elements.historyList.innerHTML = sorted.map(conv => {
+        const date = new Date(conv.updated_at);
+        const dateStr = date.toLocaleDateString();
+        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const msgCount = conv.messages.filter(m => !m.hidden).length;
+        
+        return `
+            <div class="history-item" data-id="${escapeHtml(conv.id)}">
+                <div class="history-item-content">
+                    <div class="history-item-title">${escapeHtml(conv.title)}</div>
+                    <div class="history-item-meta">
+                        <span>📅 ${dateStr} ${timeStr}</span>
+                        <span>💬 ${msgCount} messaggi</span>
+                        ${conv.model ? `<span>🤖 ${escapeHtml(conv.model)}</span>` : ''}
+                    </div>
+                </div>
+                <div class="history-item-actions">
+                    <button class="secondary load-conv-btn" data-id="${escapeHtml(conv.id)}" title="Carica">📂</button>
+                    <button class="danger delete-conv-btn" data-id="${escapeHtml(conv.id)}" title="Elimina">🗑️</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    // Add event listeners
+    elements.historyList.querySelectorAll('.load-conv-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            loadConversationFromMemory(btn.dataset.id);
+        });
+    });
+    
+    elements.historyList.querySelectorAll('.delete-conv-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm('Eliminare questa conversazione?')) {
+                deleteConversationFromMemory(btn.dataset.id);
+            }
+        });
+    });
+    
+    // Also allow clicking the whole item to load
+    elements.historyList.querySelectorAll('.history-item').forEach(item => {
+        item.addEventListener('click', () => {
+            loadConversationFromMemory(item.dataset.id);
+        });
+    });
+}
+
+async function showHistoryModal() {
+    await loadMemory();
+    renderHistoryList();
+    
+    if (elements.historyModal) {
+        elements.historyModal.classList.remove('hidden');
+    }
+}
+
+function hideHistoryModal() {
+    if (elements.historyModal) {
+        elements.historyModal.classList.add('hidden');
+    }
+}
+
 // ============ NEW CHAT / DISCONNECT ============
 
-function newChat() {
+async function newChat() {
+    // Save current conversation before starting new one
+    await saveCurrentConversation();
+    
     state.conversation = [];
     state.attachedFiles = [];
     state.systemPromptAdded = false;
     state.currentIteration = 0;
     state.pendingToolCalls = [];
     state.messageHistoryIndex = -1;
+    state.currentConversationId = null;
     
     elements.messages.innerHTML = `
         <div class="empty-state">
@@ -1285,7 +1634,10 @@ function newChat() {
     hideError();
 }
 
-function disconnect() {
+async function disconnect() {
+    // Save current conversation before disconnecting
+    await saveCurrentConversation();
+    
     state.conversation = [];
     state.models = [];
     state.selectedModel = null;
@@ -1294,6 +1646,7 @@ function disconnect() {
     state.currentIteration = 0;
     state.greetingShown = false;
     state.messageHistoryIndex = -1;
+    state.currentConversationId = null;
     
     showScreen('setup-screen');
     elements.setupError.classList.add('hidden');
@@ -1375,6 +1728,34 @@ function initEventListeners() {
         radio.addEventListener('change', updateSqlAuth);
     });
     
+    // Settings Modal
+    if (elements.settingsBtn) {
+        elements.settingsBtn.addEventListener('click', showSettingsModal);
+    }
+    if (elements.closeSettingsModal) {
+        elements.closeSettingsModal.addEventListener('click', hideSettingsModal);
+    }
+    if (elements.closeSettingsBtn) {
+        elements.closeSettingsBtn.addEventListener('click', hideSettingsModal);
+    }
+    if (elements.saveSettingsBtn) {
+        elements.saveSettingsBtn.addEventListener('click', saveSettings);
+    }
+    
+    // History Modal
+    if (elements.historyBtn) {
+        elements.historyBtn.addEventListener('click', showHistoryModal);
+    }
+    if (elements.closeHistoryModal) {
+        elements.closeHistoryModal.addEventListener('click', hideHistoryModal);
+    }
+    if (elements.closeHistoryBtn) {
+        elements.closeHistoryBtn.addEventListener('click', hideHistoryModal);
+    }
+    if (elements.clearHistoryBtn) {
+        elements.clearHistoryBtn.addEventListener('click', clearAllConversations);
+    }
+    
     // Close modals on outside click
     elements.sqlModal.addEventListener('click', (e) => {
         if (e.target === elements.sqlModal) hideSqlModal();
@@ -1386,6 +1767,18 @@ function initEventListeners() {
             state.pendingToolCalls = [];
         }
     });
+    
+    if (elements.settingsModal) {
+        elements.settingsModal.addEventListener('click', (e) => {
+            if (e.target === elements.settingsModal) hideSettingsModal();
+        });
+    }
+    
+    if (elements.historyModal) {
+        elements.historyModal.addEventListener('click', (e) => {
+            if (e.target === elements.historyModal) hideHistoryModal();
+        });
+    }
 }
 
 // ============ INITIALIZATION ============
@@ -1396,6 +1789,7 @@ async function init() {
     updateIterationCounter();
     await loadVersionIndicator();
     await loadGreeting();
+    await loadSettings();
     checkForUpdates();
     await scanNetwork();
 }

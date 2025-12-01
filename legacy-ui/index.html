@@ -68,6 +68,8 @@
                     </label>
                     <span id="iteration-counter" class="iteration-counter hidden">(0/5)</span>
                     <button id="sql-config-btn" class="icon-btn" title="Configura SQL Server">🗄️ SQL</button>
+                    <button id="settings-btn" class="icon-btn" title="Impostazioni">⚙️</button>
+                    <button id="history-btn" class="icon-btn" title="Cronologia conversazioni">📜</button>
                 </div>
                 <div class="header-right">
                     <button id="new-chat-btn" class="icon-btn" title="Nuova chat">⟲</button>
@@ -175,6 +177,60 @@
                 <div class="modal-footer">
                     <button id="confirm-allow" class="success">✓ Consenti</button>
                     <button id="confirm-cancel" class="danger">✕ Annulla</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>⚙️ Impostazioni</h2>
+                    <button id="close-settings-modal" class="close-btn">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="custom-prompt-enabled">
+                            Abilita System Prompt personalizzato
+                        </label>
+                        <small>Se abilitato, il prompt personalizzato verrà aggiunto all'inizio di ogni conversazione</small>
+                    </div>
+                    <div class="form-group">
+                        <label>System Prompt personalizzato:</label>
+                        <textarea id="custom-prompt-content" rows="8" placeholder="Inserisci qui il tuo system prompt personalizzato...&#10;&#10;Esempio:&#10;Sei un assistente esperto in programmazione. Rispondi sempre in italiano e usa esempi pratici."></textarea>
+                        <small>Questo prompt verrà salvato localmente sul tuo PC</small>
+                    </div>
+                    <div id="settings-status" class="sql-status hidden"></div>
+                    <div id="data-dir-info" class="info-box hidden">
+                        <small>📁 I dati vengono salvati in: <code id="data-dir-path"></code></small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="save-settings-btn" class="primary">💾 Salva</button>
+                    <button id="close-settings-btn" class="secondary">Chiudi</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Modal -->
+        <div id="history-modal" class="modal hidden">
+            <div class="modal-content large">
+                <div class="modal-header">
+                    <h2>📜 Cronologia Conversazioni</h2>
+                    <button id="close-history-modal" class="close-btn">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div id="history-list" class="history-list">
+                        <div class="empty-history">
+                            <p>Nessuna conversazione salvata</p>
+                            <small>Le conversazioni verranno salvate automaticamente quando le termini</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="clear-history-btn" class="danger">🗑️ Cancella tutto</button>
+                    <button id="close-history-btn" class="secondary">Chiudi</button>
                 </div>
             </div>
         </div>
