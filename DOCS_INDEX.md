@@ -170,7 +170,16 @@ Riepilogo dettagliato dei miglioramenti web aggiunti.
 Storia completa delle modifiche al progetto.
 
 **Contenuto:**
-- Versione 0.0.2-beta (Agent + Web)
+- Versione 0.0.12 (Memoria locale + AIConnect)
+- Versione 0.0.11 (Grafici)
+- Versione 0.0.10 (SQL migliorato)
+- Versione 0.0.9 (Dialog nativi)
+- Versione 0.0.8 (File avanzati)
+- Versione 0.0.7 (Async)
+- Versione 0.0.6 (Packaging)
+- Versione 0.0.5 (SQL Server)
+- Versione 0.0.4 (Migrazione Tauri)
+- Versione 0.0.3-alpha (Agent + Web)
 - Versione 0.0.1 (Base app)
 - Dipendenze aggiunte per versione
 - Bug fix e miglioramenti
@@ -246,14 +255,15 @@ Panoramica progetto MatePro con funzionalità complete.
 | Documento | Righe | Tipo | Status |
 |-----------|-------|------|--------|
 | AGENT_FEATURES.md | 240+ | Guide | ✅ Completo |
-| AGENT_WEB_TOOLS.md | 400+ | Guide | 🆕 Nuovo |
+| AGENT_WEB_TOOLS.md | 400+ | Guide | ✅ Completo |
 | AGENT_TEST_PROMPTS.md | 260+ | Testing | ✅ Completo |
-| AGENT_WEB_TEST_PROMPTS.md | 350+ | Testing | 🆕 Nuovo |
-| TOOL_REFERENCE.md | 450+ | Reference | 🆕 Nuovo |
+| AGENT_WEB_TEST_PROMPTS.md | 350+ | Testing | ✅ Completo |
+| TOOL_REFERENCE.md | 450+ | Reference | ✅ Aggiornato |
 | IMPLEMENTATION_SUMMARY.md | 250+ | Technical | ✅ Aggiornato |
-| WEB_ENHANCEMENT_SUMMARY.md | 500+ | Summary | 🆕 Nuovo |
+| WEB_ENHANCEMENT_SUMMARY.md | 500+ | Summary | ✅ Completo |
+| MCP_SQL_GUIDE.md | 600+ | Guide | ✅ Completo |
 | QUICKSTART.md | 130+ | Tutorial | ✅ Completo |
-| CHANGELOG.md | 110+ | Versioning | ✅ Aggiornato |
+| CHANGELOG.md | 250+ | Versioning | ✅ Aggiornato |
 | README.md | 200+ | Overview | ✅ Aggiornato |
 
 **Totale:** ~2,900+ righe documentazione
@@ -341,9 +351,9 @@ Panoramica progetto MatePro con funzionalità complete.
 
 ## 📝 Note Versioni
 
-**Versione documentata:** 0.0.2-beta  
-**Ultimo aggiornamento:** Dicembre 2024  
-**Tool documentati:** 11 (6 sistema + 5 web)  
+**Versione documentata:** 0.0.12  
+**Ultimo aggiornamento:** Dicembre 2025  
+**Tool documentati:** 19 (6 sistema + 4 web + 4 office + 5 SQL)  
 **Test prompts:** 56 totali  
 
 ---

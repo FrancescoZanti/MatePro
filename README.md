@@ -8,7 +8,7 @@
 
 MatePro è un client desktop multipiattaforma per l'interazione con modelli LLM serviti da Ollama. L'applicazione combina un'interfaccia grafica curata con funzionalità agentiche complete, integrate da strumenti dedicati alla gestione del sistema, del web e dei dati aziendali.
 
-> **Stato del progetto:** `v0.0.5-beta`. Il codice attivo risiede in `src-tauri/` (Tauri v2). Le directory `legacy-egui/` e `legacy-ui/` sono mantenute unicamente per archivio storico.
+> **Stato del progetto:** `v0.0.12`. Il codice attivo risiede in `src-tauri/` (Tauri v2). Le directory `legacy-egui/` e `legacy-ui/` sono mantenute unicamente per archivio storico.
 
 ![MatePro Screenshot](.github/images/matepro-main.png)
 

@@ -1,5 +1,154 @@
 # Changelog - MatePro
 
+## [0.0.12] - Memoria Locale e Sistema Prompt (Dicembre 2025)
+
+### 🎉 Novità Principali
+
+#### Memoria Locale Conversazioni
+- **NUOVO:** Sistema di persistenza conversazioni sul PC locale
+- Salvataggio automatico cronologia chat in `~/.local/share/MatePro/`
+- Supporto per ID conversazione, titolo, messaggi e timestamp
+- API per aggiunta, aggiornamento, eliminazione e pulizia conversazioni
+
+#### Custom System Prompt
+- **NUOVO:** Possibilità di configurare un system prompt personalizzato
+- Toggle attivazione/disattivazione prompt custom
+- Persistenza su disco indipendente dal server
+
+#### Integrazione AIConnect
+- **NUOVO:** Supporto backend AIConnect tramite discovery mDNS
+- Auto-rilevamento servizi `_aiconnect._tcp.local.`
+- Fallback automatico a Ollama locale quando AIConnect non disponibile
+- Supporto autenticazione Bearer e Basic
+- API per controllo nodi AIConnect
+
+#### Tool Office (4 nuovi)
+17. **text_translate** - Traduzione testo con LLM
+18. **document_summarize** - Riassunto documenti caricati
+19. **excel_improve** - Miglioramento dati Excel
+20. **word_improve** - Miglioramento documenti Word
+
+### 📦 Dipendenze Aggiunte
+- `mdns-sd` 0.17 - Service discovery mDNS
+- `chrono` con feature `serde` - Gestione timestamp
+- `html-escape` 0.2 - Escape caratteri HTML
+
+### 🔧 Miglioramenti Tecnici
+- Nuovo modulo `local_storage.rs` per persistenza locale
+- Nuovo modulo `aiconnect.rs` per integrazione AIConnect
+- Strutture dati `LocalMemory`, `ConversationEntry`, `CustomSystemPrompt`
+- Test unitari per serializzazione memoria e system prompt
+- Gestione directory dati cross-platform
+
+---
+
+## [0.0.11] - Grafici e Visualizzazioni (2025)
+
+### 🎉 Novità Principali
+
+#### Supporto Grafici
+- **NUOVO:** Generazione grafici con plotters
+- Rendering bitmap per visualizzazione in chat
+- Supporto line_series, TTF fonts, image encoding
+- Export grafici in formato base64 PNG
+
+### 📦 Dipendenze Aggiunte
+- `plotters` 0.3 - Libreria grafici Rust
+- `base64` 0.22 - Encoding immagini
+
+---
+
+## [0.0.10] - Miglioramenti SQL e Async (2025)
+
+### 🎉 Novità Principali
+
+#### Miglioramenti MCP SQL
+- Supporto `rust_decimal` per tipi Decimal SQL Server
+- Miglior compatibilità con tipi dati SQL complessi
+- Version parsing con `semver`
+
+### 📦 Dipendenze Aggiunte
+- `rust_decimal` 1 con feature `serde`
+- `semver` 1 - Version parsing
+- `whoami` 1.5 - Info utente corrente
+
+---
+
+## [0.0.9] - File Dialog e UX (2025)
+
+### 🎉 Novità Principali
+
+#### Dialog Nativi
+- **NUOVO:** Integrazione `tauri-plugin-dialog` per dialog file nativi
+- Selezione file con filtri per tipo
+- Salvataggio file con suggerimento nome
+
+### 📦 Dipendenze Aggiunte
+- `tauri-plugin-dialog` 2 - Dialog nativi sistema
+
+---
+
+## [0.0.8] - Gestione File Avanzata (2025)
+
+### 🎉 Novità Principali
+
+#### Supporto File Complesso
+- **NUOVO:** Lettura PDF con `lopdf` 0.34
+- **NUOVO:** Lettura Excel con `calamine` 0.26
+- **NUOVO:** Supporto archivi ZIP
+
+### 📦 Dipendenze Aggiunte
+- `lopdf` 0.34 - Parsing PDF
+- `calamine` 0.26 - Parsing Excel
+- `zip` 0.6 - Gestione archivi ZIP
+
+---
+
+## [0.0.7] - Async e Streaming (2025)
+
+### 🎉 Novità Principali
+
+#### Miglioramenti Async
+- Migliori utility async con `futures-util`
+- Streaming risposte LLM migliorato
+
+### 📦 Dipendenze Aggiunte
+- `futures-util` 0.3 - Utility async
+
+---
+
+## [0.0.6] - Packaging e Distribuzione (2025)
+
+### 🎉 Novità Principali
+
+#### Packaging Multi-Platform
+- Configurazione RPM con metadata completi
+- Configurazione DEB con dipendenze auto
+- Profilo release ottimizzato (strip, LTO, codegen-units=1)
+
+### 📦 Configurazione Aggiunta
+- `package.metadata.generate-rpm` - Config RPM
+- `package.metadata.deb` - Config DEB
+- Dipendenza `poppler-utils` per PDF
+
+---
+
+## [0.0.5] - Migrazione Tauri Completa (2025)
+
+### 🎉 Novità Principali
+
+#### Tool MCP SQL Server Completi
+- 5 tool SQL completamente funzionanti
+- UI configurazione database integrata
+- Test connessione async non-bloccante
+
+#### Miglioramenti Stabilità
+- Fix compatibilità sysinfo 0.30
+- Gestione errori migliorata
+- Thread safety avanzata
+
+---
+
 ## [0.0.4] - Migrazione GUI a Tauri (2025)
 
 ### 🎉 Novità Principali

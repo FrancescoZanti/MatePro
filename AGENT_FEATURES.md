@@ -18,6 +18,12 @@ Quando attiva, l'assistente può:
 
 ## Tool Disponibili
 
+MatePro include **19 tool** suddivisi in 4 categorie:
+- **6 Tool Sistema:** shell_execute, file_read, file_write, file_list, process_list, system_info
+- **4 Tool Web:** browser_open, web_search, map_open, youtube_search
+- **4 Tool Office:** text_translate, document_summarize, excel_improve, word_improve
+- **5 Tool SQL:** sql_connect, sql_query, sql_list_tables, sql_describe_table, sql_disconnect
+
 ### 1. `shell_execute` ⚠️ (Pericoloso)
 Esegue comandi shell arbitrari.
 
@@ -222,7 +228,9 @@ Nel codice è possibile modificare:
 
 ## Roadmap Futura
 
-- [ ] Tool per interazione browser/web scraping
+- [x] Tool per interazione browser/web (implementati: browser_open, web_search, map_open, youtube_search)
+- [x] Tool SQL Server per query database (implementati: sql_connect, sql_query, sql_list_tables, sql_describe_table, sql_disconnect)
+- [x] Tool Office (implementati: text_translate, document_summarize, excel_improve, word_improve)
 - [ ] Tool per gestione processi (avvia/termina)
 - [ ] Tool per manipolazione immagini
 - [ ] Sandbox mode per testing sicuro

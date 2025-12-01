@@ -192,12 +192,13 @@ Nessun warning - compilazione pulita.
 
 ## Statistiche
 
-- **Linee codice aggiunte:** ~1000+
-- **Nuovi file:** 6 (agent.rs + 5 documentazione)
-- **Tool implementati:** 11 (6 sistema + 5 web)
+- **Versione attuale:** 0.0.12
+- **Linee codice aggiunte:** ~2000+
+- **Nuovi moduli:** agent.rs, mcp_sql.rs, local_storage.rs, aiconnect.rs
+- **Tool implementati:** 19 (6 sistema + 4 web + 4 office + 5 SQL)
 - **Test prompts documentati:** 56 (21 + 35 web)
-- **Dipendenze aggiunte:** 6
-- **Righe documentazione:** 1400+
+- **Dipendenze aggiunte:** 20+
+- **Righe documentazione:** 3000+
 
 ## Funzionalità Web Aggiunte 🆕
 
@@ -207,15 +208,13 @@ L'agente ora comprende quando l'utente richiede azioni che necessitano visualizz
 - **Meteo/Notizie:** Apre ricerca web automaticamente
 - **Mappe/Indicazioni:** Usa Google Maps per località
 - **Video/Tutorial:** Cerca su YouTube
-- **Documenti:** Apre file con programma predefinito
 - **URL diretti:** Valida e apre nel browser
 
 ### Enhanced Prompt System
-Prompt agente migliorato con 7 linee guida per riconoscimento pattern:
+Prompt agente migliorato con linee guida per riconoscimento pattern:
 - Informazioni in tempo reale → `web_search`
 - Località/direzioni → `map_open`
 - Tutorial/video → `youtube_search`
-- Documenti locali → `document_view`
 - URL diretti → `browser_open`
 
 ### Validazione e Sicurezza
@@ -223,6 +222,24 @@ Prompt agente migliorato con 7 linee guida per riconoscimento pattern:
 - Encoding sicuro query parametri
 - Nessuna conferma richiesta (tool non pericolosi)
 - Cross-platform (Linux, Windows, macOS)
+
+## Funzionalità Recenti (v0.0.12)
+
+### Memoria Locale e Persistenza
+- Storage conversazioni su disco locale
+- Custom system prompt configurabile
+- API CRUD per gestione conversazioni
+
+### Integrazione AIConnect
+- Discovery automatico via mDNS
+- Supporto autenticazione Bearer/Basic
+- Fallback a Ollama locale
+
+### Tool Office e Produttività
+- `text_translate` - Traduzione multilingua
+- `document_summarize` - Riassunti automatici
+- `excel_improve` - Analisi Excel
+- `word_improve` - Miglioramento documenti
 
 ## Prossimi Passi Consigliati
 
@@ -241,3 +258,7 @@ Prompt agente migliorato con 7 linee guida per riconoscimento pattern:
 ✅ **Pronto per uso:** L'implementazione è completa, testata (compilazione), e documentata.
 
 🎯 **Obiettivo raggiunto:** L'applicazione può ora controllare il computer seguendo istruzioni dell'utente attraverso un sistema agentico sicuro e user-friendly.
+
+---
+
+**Ultimo aggiornamento:** Dicembre 2025

@@ -44,13 +44,12 @@
 
 | Metrica | Valore |
 |---------|--------|
-| **Tool Totali** | 11 (6 sistema + 5 web) |
-| **Codice Aggiunto** | ~160 righe (agent.rs + main.rs) |
-| **Documentazione Totale** | ~3,000 righe (10 file .md) |
+| **Tool Totali** | 19 (6 sistema + 4 web + 4 office + 5 SQL) |
+| **Codice Aggiunto** | ~2000 righe (agent.rs, mcp_sql.rs, local_storage.rs, aiconnect.rs) |
+| **Documentazione Totale** | ~3,000 righe (10+ file .md) |
 | **Test Prompts** | 56 (21 sistema + 35 web) |
-| **Dipendenze Aggiunte** | 3 (webbrowser, url, urlencoding) |
-| **Dimensione Docs** | ~90KB markdown |
-| **Tempo Compilazione** | 4.62s (release) |
+| **Dipendenze Aggiunte** | 20+ |
+| **Dimensione Docs** | ~150KB markdown |
 
 ---
 
@@ -259,6 +258,6 @@ cargo run --release
 
 ---
 
-**Versione:** 0.0.2-beta  
-**Data:** Dicembre 2024  
+**Versione:** 0.0.12  
+**Data:** Dicembre 2025  
 **Status:** ✅ Production Ready

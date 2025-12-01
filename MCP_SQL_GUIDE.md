@@ -603,6 +603,6 @@ Usa sempre `sql_disconnect` quando hai finito per liberare risorse.
 
 ---
 
-**Versione:** 0.0.3-beta  
-**Data:** Novembre 2024  
+**Versione:** 0.0.12  
+**Data:** Dicembre 2025  
 **Funzionalità MCP SQL:** ✅ Completa e Testata
