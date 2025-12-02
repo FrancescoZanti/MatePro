@@ -117,7 +117,7 @@
 
 ---
 
-## Tool Web e Browser (5)
+## Tool Web e Browser (4)
 
 ### 7. browser_open
 **Apre URL nel browser predefinito**
@@ -207,22 +207,191 @@
 
 ---
 
-### 11. document_view
-**Apre file locale con programma predefinito**
+## Tool Office e Produttività (4)
+
+### 11. text_translate
+**Traduce testo nella lingua desiderata**
 
 ```json
 {
-  "tool": "document_view",
+  "tool": "text_translate",
   "parameters": {
-    "file_path": "/home/user/report.pdf"
+    "text": "Hello, how are you?",
+    "target_language": "italiano",
+    "source_language": "english"
   }
 }
 ```
 
 **Pericoloso:** ❌ Nessuna conferma  
-**Supporto:** PDF, Office, immagini, video, etc.  
-**Comportamento:** Usa associazioni file di sistema  
-**Output:** Conferma apertura documento
+**Parametri:**
+- `text` (obbligatorio) - Testo da tradurre
+- `target_language` (obbligatorio) - Lingua di destinazione
+- `source_language` (opzionale) - Lingua sorgente (auto-detect se omesso)
+
+**Output:** Testo tradotto
+
+---
+
+### 12. document_summarize
+**Genera un riassunto di un documento**
+
+```json
+{
+  "tool": "document_summarize",
+  "parameters": {
+    "path": "/home/user/report.pdf",
+    "max_sentences": 5
+  }
+}
+```
+
+**Pericoloso:** ❌ Nessuna conferma  
+**Parametri:**
+- `path` (obbligatorio) - Percorso del documento
+- `max_sentences` (opzionale) - Numero massimo di frasi nel riassunto
+
+**Output:** Riassunto del documento
+
+---
+
+### 13. excel_improve
+**Migliora/analizza file Excel**
+
+```json
+{
+  "tool": "excel_improve",
+  "parameters": {
+    "path": "/home/user/data.xlsx"
+  }
+}
+```
+
+**Pericoloso:** ❌ Nessuna conferma  
+**Supporto:** File .xlsx, .xls  
+**Output:** Analisi e suggerimenti per il file Excel
+
+---
+
+### 14. word_improve
+**Migliora documenti Word**
+
+```json
+{
+  "tool": "word_improve",
+  "parameters": {
+    "path": "/home/user/document.docx"
+  }
+}
+```
+
+**Pericoloso:** ❌ Nessuna conferma  
+**Supporto:** File .docx, .doc  
+**Output:** Suggerimenti di miglioramento per il documento
+
+---
+
+## Tool MCP SQL Server (5)
+
+### 15. sql_connect
+**Connette a database SQL Server**
+
+```json
+{
+  "tool": "sql_connect",
+  "parameters": {
+    "server": "localhost",
+    "database": "Gestionale",
+    "auth_method": "sql",
+    "username": "sa",
+    "password": "MyPassword123",
+    "trust_server_certificate": true
+  }
+}
+```
+
+**Pericoloso:** ❌ Nessuna conferma  
+**Parametri:**
+- `server` (obbligatorio) - Nome/IP server
+- `database` (obbligatorio) - Nome database
+- `auth_method` (obbligatorio) - "windows" o "sql"
+- `username` (opzionale) - Per SQL auth
+- `password` (opzionale) - Per SQL auth
+- `trust_server_certificate` (opzionale) - Trust certificato SSL
+
+**Output:** Connection ID per query successive
+
+---
+
+### 16. sql_query
+**Esegue query SELECT (solo lettura)**
+
+```json
+{
+  "tool": "sql_query",
+  "parameters": {
+    "connection_id": "conn_abc123",
+    "query": "SELECT TOP 10 * FROM Clienti"
+  }
+}
+```
+
+**Pericoloso:** ❌ Nessuna conferma  
+**Restrizioni:** Solo SELECT, nessuna operazione di scrittura  
+**Output:** Risultati query in formato JSON
+
+---
+
+### 17. sql_list_tables
+**Lista tabelle e view del database**
+
+```json
+{
+  "tool": "sql_list_tables",
+  "parameters": {
+    "connection_id": "conn_abc123"
+  }
+}
+```
+
+**Pericoloso:** ❌ Nessuna conferma  
+**Output:** Lista tabelle con schema e tipo
+
+---
+
+### 18. sql_describe_table
+**Descrive struttura di una tabella**
+
+```json
+{
+  "tool": "sql_describe_table",
+  "parameters": {
+    "connection_id": "conn_abc123",
+    "schema": "dbo",
+    "table": "Clienti"
+  }
+}
+```
+
+**Pericoloso:** ❌ Nessuna conferma  
+**Output:** Colonne, tipi dati, nullable
+
+---
+
+### 19. sql_disconnect
+**Chiude connessione SQL Server**
+
+```json
+{
+  "tool": "sql_disconnect",
+  "parameters": {
+    "connection_id": "conn_abc123"
+  }
+}
+```
+
+**Pericoloso:** ❌ Nessuna conferma  
+**Output:** Conferma disconnessione
 
 ---
 
@@ -275,7 +444,15 @@ Ho eseguito il comando ls per mostrare i file.
 | Cercare online | `web_search` | Info in tempo reale, tutorial |
 | Visualizzare mappa | `map_open` | Località, indicazioni stradali |
 | Cercare video | `youtube_search` | Tutorial, guide, recensioni |
-| Aprire documento | `document_view` | PDF, Office, immagini |
+| Tradurre testo | `text_translate` | Traduzioni multilingua |
+| Riassumere documento | `document_summarize` | PDF, Word, report |
+| Analizzare Excel | `excel_improve` | Dati, formule, formattazione |
+| Migliorare Word | `word_improve` | Documenti, stile, grammatica |
+| Connettere SQL | `sql_connect` | Database SQL Server |
+| Query database | `sql_query` | SELECT su tabelle |
+| Lista tabelle | `sql_list_tables` | Schema database |
+| Struttura tabella | `sql_describe_table` | Colonne e tipi |
+| Disconnettere SQL | `sql_disconnect` | Chiusura connessione |
 
 ---
 
@@ -339,9 +516,17 @@ Eseguiti automaticamente senza conferma:
 8. web_search
 9. map_open
 10. youtube_search
-11. document_view
+11. text_translate
+12. document_summarize
+13. excel_improve
+14. word_improve
+15. sql_connect
+16. sql_query
+17. sql_list_tables
+18. sql_describe_table
+19. sql_disconnect
 
-**Ragionamento:** Operazioni read-only o apertura browser (non modificano sistema)
+**Ragionamento:** Operazioni read-only, traduzioni, o apertura browser (non modificano sistema in modo distruttivo)
 
 ---
 
@@ -459,6 +644,6 @@ Per guide dettagliate, consulta:
 
 ---
 
-**Ultima modifica:** Dicembre 2024  
-**Versione MatePro:** 0.0.2-beta  
-**Tool disponibili:** 11 (6 sistema + 5 web)
+**Ultima modifica:** Dicembre 2025  
+**Versione MatePro:** 0.0.12  
+**Tool disponibili:** 19 (6 sistema + 4 web + 4 office + 5 SQL)

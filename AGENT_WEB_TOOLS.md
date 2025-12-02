@@ -126,35 +126,6 @@ Parameters: { "query": "Dune 2 trailer italiano" }
 
 ---
 
-### 5. `document_view` 📄
-Apre un documento/file locale nel programma predefinito.
-
-**Quando usarlo:**
-- L'utente chiede di aprire un file esistente
-- Vuole visualizzare PDF, immagini, documenti
-- Necessita di vedere il contenuto di un file
-
-**Parametri:**
-- `path` (string, obbligatorio): Percorso completo del file
-
-**Esempi d'uso:**
-```
-Utente: "Apri il PDF che ho in Downloads"
-# Prima trova il file con file_list
-Tool: document_view
-Parameters: { "path": "/home/user/Downloads/document.pdf" }
-
-Utente: "Mostrami l'immagine screenshot.png"
-Tool: document_view
-Parameters: { "path": "/home/user/Pictures/screenshot.png" }
-
-Utente: "Visualizza il file README.md"
-Tool: document_view
-Parameters: { "path": "/home/user/project/README.md" }
-```
-
----
-
 ## Riconoscimento Azioni Complesse
 
 L'assistente è stato addestrato a riconoscere automaticamente quando l'utente richiede azioni che necessitano del browser:
@@ -184,10 +155,6 @@ L'assistente è stato addestrato a riconoscere automaticamente quando l'utente r
 - "apri il sito", "vai su"
 - "mostra la pagina", "visita"
 - URL esplicito fornito dall'utente
-
-**Per `document_view`:**
-- "apri il file", "visualizza", "mostrami"
-- Con percorso file specificato
 
 ---
 
@@ -360,11 +327,6 @@ Hai già un indirizzo specifico per l'evento?"
 - Assicurati che inizi con http:// o https://
 - Controlla spelling del dominio
 - Usa `web_search` se non conosci URL esatto
-
-### "File non trovato per document_view"
-- Verifica percorso con `file_list` prima
-- Usa percorsi assoluti
-- Controlla permessi file
 
 ---
 

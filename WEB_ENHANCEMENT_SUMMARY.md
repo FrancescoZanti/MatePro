@@ -8,7 +8,7 @@ La modalità agente di **MatePro** è stata potenziata con capacità web/browser
 
 ## Cosa è Stato Aggiunto
 
-### 5 Nuovi Tool Web 🛠️
+### 4 Tool Web 🛠️
 
 #### 1. **browser_open**
 Apre URL nel browser predefinito del sistema.
@@ -60,20 +60,9 @@ youtube_search(query: "tutorial Python italiano")
 
 ---
 
-#### 5. **document_view**
-Apre file locali con il programma predefinito di sistema.
-
-```rust
-document_view(file_path: "/home/user/document.pdf")
-```
-
-**Supporto:** PDF, documenti Office, immagini, video, etc.
-
----
-
 ## Enhanced Prompt System 🧠
 
-Il prompt dell'agente è stato migliorato con **7 linee guida** per riconoscere pattern che richiedono web:
+Il prompt dell'agente è stato migliorato con linee guida per riconoscere pattern che richiedono web:
 
 ### Pattern Riconosciuti
 
@@ -84,7 +73,7 @@ Il prompt dell'agente è stato migliorato con **7 linee guida** per riconoscere 
 | "Come arrivo a Firenze?" | `map_open` (directions) | Indicazioni stradali |
 | "Cerca tutorial Python" | `youtube_search` | Richiesta video esplicita |
 | "Apri GitHub" | `browser_open` | URL diretto |
-| "Mostrami il file report.pdf" | `document_view` | File locale |
+| "Leggi il file report.txt" | `file_read` | File locale |
 
 ### Comprensione Contestuale
 
@@ -267,12 +256,11 @@ urlencoding = "2.1"     # Encoding query parametri
 
 | Metrica | Valore |
 |---------|--------|
-| Tool Totali | 11 (6 sistema + 5 web) |
-| Righe Codice Aggiunte | ~160 (agent.rs + main.rs) |
-| Documentazione Creata | 750+ righe (2 nuovi file) |
+| Tool Totali | 19 (6 sistema + 4 web + 4 office + 5 SQL) |
+| Righe Codice Aggiunte | ~2000 |
+| Documentazione | 3000+ righe |
 | Test Prompts | 56 totali (21 + 35) |
-| Dipendenze Aggiunte | 3 (webbrowser, url, urlencoding) |
-| Tempo Compilazione | 4.62s (release) |
+| Dipendenze Aggiunte | 20+ |
 
 ---
 
@@ -428,10 +416,10 @@ La modalità agente di MatePro è ora **completa e pronta all'uso** con capacit�
 ### Affidabilità
 
 ✅ Compilazione pulita (0 warnings)  
-✅ 11 tool funzionanti  
+✅ 19 tool funzionanti  
 ✅ 56 test documentati  
 ✅ Cross-platform (Linux, Windows, macOS)  
-✅ Documentazione completa (1400+ righe)  
+✅ Documentazione completa (3000+ righe)  
 
 ---
 
