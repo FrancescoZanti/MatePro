@@ -290,6 +290,7 @@ function formatMessage(content) {
     let codeLines = [];
     let codeLanguage = '';
     let currentList = null;
+    let listPendingClose = false;
     let paragraphLines = [];
 
     const flushParagraph = () => {
@@ -302,11 +303,20 @@ function formatMessage(content) {
 
     const flushList = () => {
         if (!currentList) {
+            listPendingClose = false;
             return;
         }
         const items = currentList.items.join('');
         htmlParts.push(`<${currentList.type}>${items}</${currentList.type}>`);
         currentList = null;
+        listPendingClose = false;
+    };
+
+    const closePendingList = () => {
+        if (listPendingClose && currentList) {
+            flushList();
+        }
+        listPendingClose = false;
     };
 
     const flushCode = () => {
@@ -345,12 +355,31 @@ function formatMessage(content) {
 
         if (trimmed.length === 0) {
             flushParagraph();
-            flushList();
+            if (currentList) {
+                listPendingClose = true;
+            }
             continue;
+        }
+
+        if (currentList) {
+            const continuationMatch = rawLine.match(/^\s{2,}(.*)$/);
+            if (continuationMatch && continuationMatch[1].trim().length > 0) {
+                listPendingClose = false;
+                const continuationText = applyInlineFormatting(escapeHtml(continuationMatch[1].trim()));
+                if (currentList.items.length > 0) {
+                    const lastIndex = currentList.items.length - 1;
+                    currentList.items[lastIndex] = currentList.items[lastIndex].replace(
+                        /<\/li>$/,
+                        `<br>${continuationText}</li>`
+                    );
+                }
+                continue;
+            }
         }
 
         const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
         if (headingMatch) {
+            closePendingList();
             flushParagraph();
             flushList();
             const level = headingMatch[1].length;
@@ -360,6 +389,7 @@ function formatMessage(content) {
         }
 
         if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+            closePendingList();
             flushParagraph();
             flushList();
             htmlParts.push('<hr>');
@@ -367,6 +397,7 @@ function formatMessage(content) {
         }
 
         if (trimmed.startsWith('>')) {
+            closePendingList();
             flushParagraph();
             flushList();
             const quoteText = applyInlineFormatting(escapeHtml(trimmed.replace(/^>\s?/, '')));
@@ -377,6 +408,7 @@ function formatMessage(content) {
         const unorderedMatch = trimmed.match(/^([*+-])\s+(.*)$/);
         if (unorderedMatch) {
             flushParagraph();
+            listPendingClose = false;
             const itemText = applyInlineFormatting(escapeHtml(unorderedMatch[2]));
             if (!currentList || currentList.type !== 'ul') {
                 flushList();
@@ -389,6 +421,7 @@ function formatMessage(content) {
         const orderedMatch = trimmed.match(/^(\d+)[.)]\s+(.*)$/);
         if (orderedMatch) {
             flushParagraph();
+            listPendingClose = false;
             const itemText = applyInlineFormatting(escapeHtml(orderedMatch[2]));
             if (!currentList || currentList.type !== 'ol') {
                 flushList();
@@ -398,6 +431,7 @@ function formatMessage(content) {
             continue;
         }
 
+        closePendingList();
         paragraphLines.push(applyInlineFormatting(escapeHtml(line)));
     }
 
@@ -778,6 +812,33 @@ async function loadModels() {
 
 // ============ CHAT ============
 
+const THINK_TAG_REGEX = /<think>([\s\S]*?)<\/think>/gi;
+
+function splitVisibleContentAndReasoning(content) {
+    if (!content || typeof content !== 'string') {
+        return {
+            visible: content || '',
+            reasoningBlocks: [],
+        };
+    }
+
+    const reasoningBlocks = [];
+    const withoutReasoning = content.replace(THINK_TAG_REGEX, (_, inner) => {
+        const trimmed = inner.trim();
+        if (trimmed.length > 0) {
+            reasoningBlocks.push(trimmed);
+        }
+        return '';
+    });
+
+    const normalized = withoutReasoning.replace(/\n{3,}/g, '\n\n').trim();
+
+    return {
+        visible: normalized,
+        reasoningBlocks,
+    };
+}
+
 function addMessage(role, content, timestamp = null) {
     const emptyState = elements.messages.querySelector('.empty-state');
     if (emptyState) {
@@ -789,7 +850,39 @@ function addMessage(role, content, timestamp = null) {
     
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';
-    bubble.innerHTML = role === 'user' ? escapeHtml(content) : formatMessage(content);
+    let displayContent = content;
+    let reasoningBlocks = [];
+
+    if (role === 'assistant') {
+        const splitResult = splitVisibleContentAndReasoning(content);
+        displayContent = splitResult.visible;
+        reasoningBlocks = splitResult.reasoningBlocks;
+    }
+
+    bubble.innerHTML = role === 'user' ? escapeHtml(displayContent) : formatMessage(displayContent);
+
+    if (role === 'assistant' && reasoningBlocks.length > 0) {
+        const details = document.createElement('details');
+        details.className = 'think-block';
+
+        const summary = document.createElement('summary');
+        summary.textContent = 'Mostra ragionamento del modello';
+        details.appendChild(summary);
+
+        const thinkBody = document.createElement('div');
+        thinkBody.className = 'think-content';
+        thinkBody.innerHTML = formatMessage(reasoningBlocks.join('\n\n'));
+        details.appendChild(thinkBody);
+
+        details.addEventListener('toggle', () => {
+            summary.textContent = details.open
+                ? 'Nascondi ragionamento del modello'
+                : 'Mostra ragionamento del modello';
+        });
+
+        bubble.appendChild(details);
+    }
+
     messageDiv.appendChild(bubble);
     
     if (timestamp) {
@@ -873,7 +966,7 @@ async function sendMessage() {
         if (state.agentMode) {
             const toolsDesc = await getToolsDescription();
             systemContent += '\n\n' + toolsDesc;
-            systemContent += '\n\n**LINEE GUIDA:**\n- Usa i tool appropriati per le richieste dell\'utente.\n- Se la risposta richiede dati aggiornati o verifiche, esegui `web_search` e integra i risultati nel ragionamento.\n- Riassumi le fonti web con le tue parole e cita gli URL principali nella risposta.';
+            systemContent += '\n\n**LINEE GUIDA:**\n- Usa i tool appropriati per le richieste dell\'utente.\n- Se la risposta richiede dati aggiornati o verifiche, esegui `web_search` e integra solo fonti considerate affidabili.\n- Quando ricevi note di ricerca dal backend, trattale come riferimenti da citare in formato [Titolo](URL) indicando il dominio.\n- Riassumi con parole tue e segnala eventuali incongruenze o assenza di dati aggiornati.';
         }
         
         state.conversation.push({ role: 'user', content: systemContent, hidden: true });

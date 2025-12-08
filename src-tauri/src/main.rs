@@ -540,6 +540,31 @@ async fn chat(
     model: String,
     messages: Vec<Message>,
 ) -> Result<Message, String> {
+    let mut messages = messages;
+
+    if let Some(last_user_index) = messages
+        .iter()
+        .rposition(|message| message.role == "user" && !message.hidden)
+    {
+        let last_user_content = messages[last_user_index].content.clone();
+        let context = {
+            let agent = state.agent_system.lock().await;
+            agent
+                .build_web_search_context(&last_user_content)
+                .await
+        };
+
+        if let Some(context_text) = context {
+            let context_message = Message {
+                role: "system".to_string(),
+                content: context_text,
+                hidden: true,
+                timestamp: Some(get_timestamp()),
+            };
+            messages.insert(last_user_index, context_message);
+        }
+    }
+
     let url = state.ollama_url.lock().await;
     let request = ChatRequest {
         model,

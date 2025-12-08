@@ -504,6 +504,51 @@ button:disabled {
     margin-bottom: 0;
 }
 
+.message-bubble details.think-block {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.03);
+}
+
+@media (prefers-color-scheme: dark) {
+    .message-bubble details.think-block {
+        background: rgba(255, 255, 255, 0.05);
+    }
+}
+
+.message-bubble details.think-block summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-secondary);
+    list-style: none;
+}
+
+.message-bubble details.think-block summary::-webkit-details-marker {
+    display: none;
+}
+
+.message-bubble details.think-block summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 0.5rem;
+    transition: transform 0.2s ease;
+}
+
+.message-bubble details.think-block[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.message-bubble details.think-block[open] summary {
+    color: var(--accent);
+}
+
+.message-bubble details.think-block .think-content {
+    margin-top: 0.5rem;
+    color: var(--text-secondary);
+}
+
 .loading-indicator {
     display: flex;
     align-items: center;

@@ -4,6 +4,7 @@
 use crate::mcp_sql;
 use anyhow::{anyhow, Context, Result};
 use calamine::{open_workbook, Data, Ods, Range, Reader, Xls, Xlsx};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, Local, NaiveDate, Utc};
 use html_escape::decode_html_entities;
 use lazy_static::lazy_static;
 use lopdf::Document;
@@ -61,6 +62,7 @@ pub struct ToolResult {
 }
 
 impl ToolResult {
+    #[allow(dead_code)]
     pub fn to_markdown(&self) -> String {
         if self.success {
             format!(
@@ -89,7 +91,71 @@ lazy_static! {
         r"(?s)<description>(?:<!\[CDATA\[(.*?)\]\]>|(.*?))</description>"
     )
     .unwrap();
+    static ref NEWS_PUBDATE_RE: Regex =
+        Regex::new(r"(?s)<pubDate>(?:<!\[CDATA\[(.*?)\]\]>|(.*?))</pubDate>").unwrap();
+    static ref NEWS_QUERY_RE: Regex = Regex::new(
+        r"(?i)\b(notizie|ultime\s+notizie|ultimissime|news|aggiornamenti|rassegna\s+stampa|breaking\s+news)\b"
+    )
+    .unwrap();
+    static ref ANALYSIS_QUERY_RE: Regex = Regex::new(
+        r"(?i)\b(analisi|analizza|analitica|approfondisci|approfondimento|teoria|studio|ricerca|confronta|spiega)\b"
+    )
+    .unwrap();
     static ref HTML_TAG_RE: Regex = Regex::new(r"<[^>]+>").unwrap();
+    static ref COMMAND_PREFIX_RE: Regex = Regex::new(
+        r"(?i)^\s*(?:cerca|trova|mostra(?:mi)?|dammi|forniscimi|ricerca|ricercami|cercami|indicami|parlami|fammi\s+vedere|elenca|lista|analizza)\b[\s,.:;-]*(?:\b(?:le|la|il|i|gli|dei|degli|delle|del|della|per|di|sulle|sui|sul|alla|allo|ai|agli|sugli|sulla|sulle|l')\b\s*)*"
+    )
+    .unwrap();
+    static ref REDUNDANT_ODIERNA_RE: Regex =
+        Regex::new(r"(?i)[,;]?\s*ovvero\s+la\s+giornata\s+odierna").unwrap();
+    static ref QUERY_GIORNATA_ODIERNA_RE: Regex =
+        Regex::new(r"(?i)\bgiornat[ae]\s+odiern[ae]\b").unwrap();
+    static ref QUERY_ODIERNA_WORD_RE: Regex =
+        Regex::new(r"(?i)\bodiern[oaie]\b").unwrap();
+    static ref QUERY_OGGI_RE: Regex = Regex::new(r"(?i)\boggi\b").unwrap();
+    static ref QUERY_IERI_RE: Regex = Regex::new(r"(?i)\bieri\b").unwrap();
+    static ref QUERY_DOMANI_RE: Regex = Regex::new(r"(?i)\bdomani\b").unwrap();
+}
+
+const TRUSTED_DOMAINS: &[&str] = &[
+    "ansa.it",
+    "repubblica.it",
+    "corriere.it",
+    "ilsole24ore.com",
+    "rainews.it",
+    "tg24.sky.it",
+    "sky.it",
+    "sky.com",
+    "skynews.com",
+    "bloomberg.com",
+    "reuters.com",
+    "apnews.com",
+    "bbc.com",
+    "euronews.com",
+    "news.google.com",
+    "cnn.com",
+    "cnbc.com",
+    "aljazeera.com",
+    "washingtonpost.com",
+    "theguardian.com",
+    "guardian.com",
+    "latimes.com",
+    "who.int",
+    "ec.europa.eu",
+    "fao.org",
+    "imf.org",
+    "worldbank.org",
+    "nytimes.com",
+    "ft.com",
+    "nature.com",
+    "science.org",
+];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QueryIntent {
+    News,
+    DeepAnalysis,
+    General,
 }
 
 /// Agent system that manages tools
@@ -654,6 +720,73 @@ impl AgentSystem {
         Ok(tool_result)
     }
 
+    pub async fn build_web_search_context(&self, user_message: &str) -> Option<String> {
+        let trimmed = user_message.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        let intent = Self::classify_query_intent(trimmed);
+        if matches!(intent, QueryIntent::General) {
+            return None;
+        }
+
+        let (refined_query, preprocess_note) = Self::refine_web_query(trimmed);
+        let search_query = if refined_query.trim().is_empty() {
+            trimmed.to_string()
+        } else {
+            refined_query
+        };
+
+        let mut params = HashMap::new();
+        params.insert(
+            "query".to_string(),
+            serde_json::Value::String(search_query.clone()),
+        );
+
+        if matches!(intent, QueryIntent::DeepAnalysis) {
+            params.insert("max_results".to_string(), json!(6));
+        }
+
+        match self.execute_web_search(&params).await {
+            Ok(raw_output) => {
+                let sanitized = raw_output
+                    .lines()
+                    .filter(|line| {
+                        let trimmed = line.trim_start();
+                        !trimmed.starts_with("🔗 Altri risultati:")
+                            && !trimmed.starts_with("🔗 Prova a consultare:")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                if sanitized.trim().is_empty()
+                    || sanitized.contains("⚠️ Non ho trovato risultati strutturati")
+                {
+                    return Some(format!(
+                        "NESSUNA FONTE AFFIDABILE TROVATA per la ricerca \"{}\".\nDevi rispondere seguendo queste istruzioni, senza eccezioni:\n1. Comunica chiaramente che non sono disponibili aggiornamenti verificati per l'argomento richiesto.\n2. Non inventare eventi, non riassumere conoscenze pregresse e non citare fonti inesistenti.\n3. Suggerisci eventualmente di riprovare più tardi o di fornire maggiori dettagli, ma evita qualsiasi speculazione.",
+                        search_query
+                    ));
+                }
+
+                let mut context = String::from(
+                    "ISTRUZIONI FONTI:\n- Usa esclusivamente i riferimenti elencati di seguito.\n- Cita ogni fonte nel formato [Titolo](URL) indicando il dominio.\n- Non integrare conoscenze non supportate dalle fonti elencate.\n- Se qualcosa è incerto o contraddittorio, evidenzialo invece di colmare i vuoti.\n\n",
+                );
+                context.push_str(&sanitized);
+
+                if let Some(note) = preprocess_note {
+                    context.push_str(&format!("\n\nNota preprocessing: {}", note));
+                }
+
+                Some(context)
+            }
+            Err(err) => Some(format!(
+                "Ricerca web fallita per \"{}\": {}. Comunica all'utente che non è stato possibile ottenere fonti aggiornate.",
+                search_query, err
+            )),
+        }
+    }
+
     pub fn set_allow_dangerous(&mut self, allow: bool) {
         self.allow_dangerous = allow;
     }
@@ -848,13 +981,24 @@ impl AgentSystem {
             .and_then(|v| v.as_str())
             .context("Parametro 'query' mancante")?;
 
-        let max_results = params
+        let mut max_results = params
             .get("max_results")
             .and_then(|v| v.as_i64())
             .map(|n| n.clamp(1, 8) as usize)
             .unwrap_or(5);
 
-        let encoded_query = urlencoding::encode(query);
+        let (refined_query, preprocess_note) = Self::refine_web_query(query);
+        let search_query = if refined_query.trim().is_empty() {
+            query.to_string()
+        } else {
+            refined_query
+        };
+        let intent = Self::classify_query_intent(&search_query);
+        if matches!(intent, QueryIntent::DeepAnalysis) && max_results < 4 {
+            max_results = 4;
+        }
+
+        let encoded_query = urlencoding::encode(&search_query);
         let request_url = format!(
             "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1&no_redirect=1&t=matepro-agent",
             encoded_query
@@ -880,13 +1024,17 @@ impl AgentSystem {
             .context("Impossibile analizzare la risposta del motore di ricerca")?;
 
         let mut quick_answers: Vec<String> = Vec::new();
+        let mut filtered_out = 0usize;
+        let mut link_rewrites: Vec<(String, String)> = Vec::new();
 
-        if let Some(answer) = payload
+        if payload
             .get("Answer")
             .and_then(|v| v.as_str())
             .filter(|s| !s.trim().is_empty())
+            .is_some()
         {
-            quick_answers.push(format!("Risposta rapida: {}", answer.trim()));
+            // Risposte senza fonte esplicita vengono ignorate per mantenere solo contenuti verificabili
+            filtered_out += 1;
         }
 
         if let Some(abstract_text) = payload
@@ -894,26 +1042,42 @@ impl AgentSystem {
             .and_then(|v| v.as_str())
             .filter(|s| !s.trim().is_empty())
         {
-            let abstract_url = payload
+            if let Some(abstract_url) = payload
                 .get("AbstractURL")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.trim().is_empty())
-                .map(|url| format!(" (fonte: {})", url));
-
-            quick_answers.push(format!(
-                "Sintesi principale: {}{}",
-                abstract_text.trim(),
-                abstract_url.unwrap_or_default()
-            ));
+            {
+                if AgentSystem::is_trusted_url(abstract_url) {
+                    quick_answers.push(format!(
+                        "Sintesi principale: {} (fonte: {})",
+                        abstract_text.trim(),
+                        abstract_url
+                    ));
+                } else {
+                    filtered_out += 1;
+                }
+            }
         }
 
         let mut results: Vec<(String, Option<String>, Option<String>)> = Vec::new();
+        let mut news_items: Vec<(String, Option<String>, String)> = Vec::new();
+        if matches!(intent, QueryIntent::News) {
+            if let Ok((items, rewrites)) = Self::fetch_google_news(&client, &search_query, max_results).await {
+                news_items = items;
+                link_rewrites.extend(rewrites);
+            }
+        }
+
+        if !news_items.is_empty() {
+            news_items = AgentSystem::filter_trusted_news(news_items, &mut filtered_out);
+        }
 
         fn push_entry(
             results: &mut Vec<(String, Option<String>, Option<String>)>,
             max_results: usize,
             text: &str,
             url: Option<&str>,
+            filtered_out: &mut usize,
         ) {
             if results.len() >= max_results {
                 return;
@@ -945,45 +1109,54 @@ impl AgentSystem {
                 .filter(|u| !u.is_empty())
                 .map(|u| u.to_string());
 
+            if let Some(ref url_value) = url {
+                if !AgentSystem::is_trusted_url(url_value) {
+                    *filtered_out += 1;
+                    return;
+                }
+            }
+
             if !title.is_empty() {
                 results.push((title.to_string(), snippet, url));
             }
         }
 
-        if let Some(items) = payload.get("Results").and_then(|v| v.as_array()) {
-            for item in items {
-                if results.len() >= max_results {
-                    break;
-                }
-
-                if let Some(text) = item.get("Text").and_then(|v| v.as_str()) {
-                    let url = item.get("FirstURL").and_then(|v| v.as_str());
-                    push_entry(&mut results, max_results, text, url);
-                }
-            }
-        }
-
-        if results.len() < max_results {
-            if let Some(related) = payload.get("RelatedTopics").and_then(|v| v.as_array()) {
-                for entry in related {
+        if !matches!(intent, QueryIntent::News) {
+            if let Some(items) = payload.get("Results").and_then(|v| v.as_array()) {
+                for item in items {
                     if results.len() >= max_results {
                         break;
                     }
 
-                    if let Some(topics) = entry.get("Topics").and_then(|v| v.as_array()) {
-                        for topic in topics {
-                            if results.len() >= max_results {
-                                break;
-                            }
+                    if let Some(text) = item.get("Text").and_then(|v| v.as_str()) {
+                        let url = item.get("FirstURL").and_then(|v| v.as_str());
+                        push_entry(&mut results, max_results, text, url, &mut filtered_out);
+                    }
+                }
+            }
 
-                            if let Some(text) = topic.get("Text").and_then(|v| v.as_str()) {
-                                let url = topic.get("FirstURL").and_then(|v| v.as_str());
-                                push_entry(&mut results, max_results, text, url);
-                            }
+            if results.len() < max_results {
+                if let Some(related) = payload.get("RelatedTopics").and_then(|v| v.as_array()) {
+                    for entry in related {
+                        if results.len() >= max_results {
+                            break;
                         }
-                    } else if let Some(text) = entry.get("Text").and_then(|v| v.as_str()) {
-                        let url = entry.get("FirstURL").and_then(|v| v.as_str());
-                        push_entry(&mut results, max_results, text, url);
+
+                        if let Some(topics) = entry.get("Topics").and_then(|v| v.as_array()) {
+                            for topic in topics {
+                                if results.len() >= max_results {
+                                    break;
+                                }
+
+                                if let Some(text) = topic.get("Text").and_then(|v| v.as_str()) {
+                                    let url = topic.get("FirstURL").and_then(|v| v.as_str());
+                                    push_entry(&mut results, max_results, text, url, &mut filtered_out);
+                                }
+                            }
+                        } else if let Some(text) = entry.get("Text").and_then(|v| v.as_str()) {
+                            let url = entry.get("FirstURL").and_then(|v| v.as_str());
+                            push_entry(&mut results, max_results, text, url, &mut filtered_out);
+                        }
                     }
                 }
             }
@@ -991,7 +1164,14 @@ impl AgentSystem {
 
         let fallback_url = format!("https://www.google.com/search?q={}", encoded_query);
         let mut output = String::new();
-        output.push_str(&format!("🌐 Ricerca web per \"{}\"\n\n", query));
+        output.push_str(&format!("🌐 Ricerca web per \"{}\"\n", query));
+        if search_query != query {
+            output.push_str(&format!("➡️ Query ottimizzata: \"{}\"\n", search_query));
+        }
+        if let Some(note) = &preprocess_note {
+            output.push_str(&format!("ℹ️ {}\n", note));
+        }
+        output.push('\n');
 
         let mut had_structured = false;
 
@@ -1001,6 +1181,29 @@ impl AgentSystem {
                 output.push('\n');
             }
             output.push('\n');
+            had_structured = true;
+        }
+
+        if !news_items.is_empty() {
+            output.push_str("📰 Notizie recenti\n");
+            for (idx, (title, snippet, url)) in news_items.iter().enumerate() {
+                let display_domain = Url::parse(url)
+                    .ok()
+                    .and_then(|parsed| parsed.domain().map(|d| d.to_string()))
+                    .unwrap_or_else(|| url.clone());
+
+                output.push_str(&format!(
+                    "{}. [{}]({}) — {}\n",
+                    idx + 1,
+                    title,
+                    url,
+                    display_domain
+                ));
+                if let Some(snippet) = snippet {
+                    output.push_str(&format!("   {}\n", snippet));
+                }
+                output.push('\n');
+            }
             had_structured = true;
         }
 
@@ -1023,10 +1226,15 @@ impl AgentSystem {
                 output.push('\n');
             }
             had_structured = true;
+            if matches!(intent, QueryIntent::DeepAnalysis) && results.len() >= 2 {
+                output.push_str("ℹ️ Ho incluso più fonti per supportare l'analisi richiesta.\n\n");
+            }
         }
 
         if !had_structured {
-            if let Ok(news_items) = Self::fetch_google_news(&client, query, max_results).await {
+            if let Ok((items, rewrites)) = Self::fetch_google_news(&client, &search_query, max_results).await {
+                let news_items = AgentSystem::filter_trusted_news(items, &mut filtered_out);
+                link_rewrites.extend(rewrites);
                 if !news_items.is_empty() {
                     output.push_str("📰 Notizie recenti\n");
                     for (idx, (title, snippet, url)) in news_items.iter().enumerate() {
@@ -1052,6 +1260,21 @@ impl AgentSystem {
             }
         }
 
+        if filtered_out > 0 {
+            output.push_str(&format!(
+                "ℹ️ {} risultati sono stati scartati perché la fonte non rientra nell'elenco di siti affidabili.\n\n",
+                filtered_out
+            ));
+        }
+
+        if !link_rewrites.is_empty() {
+            output.push_str("🔧 Ho normalizzato i seguenti link provenienti da Google News per puntare alla fonte originale:\n");
+            for (original, normalized) in &link_rewrites {
+                output.push_str(&format!("- {} → {}\n", original, normalized));
+            }
+            output.push('\n');
+        }
+
         if had_structured {
             output.push_str(&format!("🔗 Altri risultati: {}", fallback_url));
         } else {
@@ -1062,11 +1285,246 @@ impl AgentSystem {
         Ok(output)
     }
 
+    fn refine_web_query(query: &str) -> (String, Option<String>) {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return (String::new(), None);
+        }
+
+        let mut working = trimmed.to_string();
+        let mut notes: Vec<String> = Vec::new();
+
+        if let Some(prefix_match) = COMMAND_PREFIX_RE.find(trimmed) {
+            let remainder = trimmed[prefix_match.end()..].trim();
+            if !remainder.is_empty() {
+                working = remainder.to_string();
+                notes.push(
+                    "Ho ignorato l'istruzione iniziale per concentrarmi sui termini di ricerca principali.".to_string(),
+                );
+            }
+        }
+
+        if REDUNDANT_ODIERNA_RE.is_match(&working) {
+            let cleaned = REDUNDANT_ODIERNA_RE
+                .replace_all(&working, "")
+                .to_string();
+            if !cleaned.trim().is_empty() {
+                working = cleaned;
+            }
+        }
+
+        let today = Local::now().date_naive();
+
+        Self::apply_relative_keyword(
+            &mut working,
+            &QUERY_GIORNATA_ODIERNA_RE,
+            today,
+            "giornata odierna",
+            &mut notes,
+        );
+        Self::apply_relative_keyword(
+            &mut working,
+            &QUERY_ODIERNA_WORD_RE,
+            today,
+            "odierna",
+            &mut notes,
+        );
+        Self::apply_relative_keyword(
+            &mut working,
+            &QUERY_OGGI_RE,
+            today,
+            "oggi",
+            &mut notes,
+        );
+        Self::apply_relative_keyword(
+            &mut working,
+            &QUERY_IERI_RE,
+            today - Duration::days(1),
+            "ieri",
+            &mut notes,
+        );
+        Self::apply_relative_keyword(
+            &mut working,
+            &QUERY_DOMANI_RE,
+            today + Duration::days(1),
+            "domani",
+            &mut notes,
+        );
+
+        let normalized = normalize_whitespace(&working);
+        let cleaned = normalized.trim();
+
+        let final_query = if cleaned.is_empty() {
+            trimmed.to_string()
+        } else {
+            cleaned.to_string()
+        };
+
+        let note = if notes.is_empty() {
+            None
+        } else {
+            Some(notes.join(" "))
+        };
+
+        (final_query, note)
+    }
+
+    fn classify_query_intent(query: &str) -> QueryIntent {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return QueryIntent::General;
+        }
+
+        if NEWS_QUERY_RE.is_match(trimmed) {
+            return QueryIntent::News;
+        }
+
+        if ANALYSIS_QUERY_RE.is_match(trimmed) {
+            return QueryIntent::DeepAnalysis;
+        }
+
+        QueryIntent::General
+    }
+
+    fn apply_relative_keyword(
+        working: &mut String,
+        regex: &Regex,
+        date: NaiveDate,
+        label: &str,
+        notes: &mut Vec<String>,
+    ) {
+        if regex.is_match(working) {
+            let formatted = Self::format_italian_date(date);
+            let updated = regex
+                .replace_all(working, formatted.as_str())
+                .to_string();
+            if updated != *working {
+                *working = updated;
+                notes.push(format!("Ho interpretato '{}' come {}.", label, formatted));
+            }
+        }
+    }
+
+    fn format_italian_date(date: NaiveDate) -> String {
+        let month = match date.month() {
+            1 => "gennaio",
+            2 => "febbraio",
+            3 => "marzo",
+            4 => "aprile",
+            5 => "maggio",
+            6 => "giugno",
+            7 => "luglio",
+            8 => "agosto",
+            9 => "settembre",
+            10 => "ottobre",
+            11 => "novembre",
+            12 => "dicembre",
+            _ => "",
+        };
+
+        format!("{} {} {}", date.day(), month, date.year())
+    }
+
+    fn is_trusted_url(url: &str) -> bool {
+        if let Ok(parsed) = Url::parse(url) {
+            if let Some(domain) = parsed.domain() {
+                return AgentSystem::is_trusted_domain(domain);
+            }
+        }
+
+        false
+    }
+
+    fn is_trusted_domain(domain: &str) -> bool {
+        let domain_lc = domain.to_ascii_lowercase();
+
+        for allowed in TRUSTED_DOMAINS {
+            if domain_lc == *allowed {
+                return true;
+            }
+
+            if let Some(prefix) = domain_lc.strip_suffix(allowed) {
+                if prefix.ends_with('.') {
+                    return true;
+                }
+            }
+        }
+
+        if domain_lc.ends_with(".gov")
+            || domain_lc.ends_with(".gov.it")
+            || domain_lc.ends_with(".gouv.fr")
+            || domain_lc.ends_with(".parliament.uk")
+            || domain_lc.ends_with(".int")
+            || domain_lc.ends_with(".eu")
+            || domain_lc.ends_with(".europa.eu")
+            || domain_lc.ends_with(".edu")
+        {
+            return true;
+        }
+
+        false
+    }
+
+    fn filter_trusted_news(
+        items: Vec<(String, Option<String>, String)>,
+        filtered_out: &mut usize,
+    ) -> Vec<(String, Option<String>, String)> {
+        items
+            .into_iter()
+            .filter(|(_, _, url)| {
+                if AgentSystem::is_trusted_url(url) {
+                    true
+                } else {
+                    *filtered_out += 1;
+                    false
+                }
+            })
+            .collect()
+    }
+
+    fn normalize_google_news_link(url: &str) -> (String, Option<(String, String)>) {
+        if let Ok(parsed) = Url::parse(url) {
+            if parsed
+                .domain()
+                .map(|domain| domain == "news.google.com")
+                .unwrap_or(false)
+            {
+                let mut candidate = None;
+                for (key, value) in parsed.query_pairs() {
+                    if key == "url" || key == "u" {
+                        let decoded = value.into_owned();
+                        if !decoded.trim().is_empty() {
+                            candidate = Some(decoded);
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(target) = candidate {
+                    if target != url {
+                        if let Ok(parsed_target) = Url::parse(&target) {
+                            let normalized_string: String = parsed_target.into();
+                            let rewrite_pair = (url.to_string(), normalized_string.clone());
+                            return (normalized_string, Some(rewrite_pair));
+                        } else {
+                            return (target.clone(), Some((url.to_string(), target)));
+                        }
+                    }
+                }
+            }
+        }
+
+        (url.to_string(), None)
+    }
+
     async fn fetch_google_news(
         client: &Client,
         query: &str,
         max_results: usize,
-    ) -> Result<Vec<(String, Option<String>, String)>> {
+    ) -> Result<(
+        Vec<(String, Option<String>, String)>,
+        Vec<(String, String)>,
+    )> {
         let encoded_query = urlencoding::encode(query);
         let rss_url = format!(
             "https://news.google.com/rss/search?q={}&hl=it&gl=IT&ceid=IT:it",
@@ -1087,16 +1545,30 @@ impl AgentSystem {
             .context("Impossibile leggere il feed di notizie")?;
 
         let mut items = Vec::new();
+        let mut rewrites = Vec::new();
+        let recency_cutoff = Utc::now() - Duration::hours(48); // enforce recent news only
 
         for capture in NEWS_ITEM_RE.captures_iter(&body) {
-            if items.len() >= max_results {
-                break;
-            }
-
             let block = capture.get(1).map(|m| m.as_str()).unwrap_or("");
 
+            let published = capture_rss_field(block, &NEWS_PUBDATE_RE)
+                .and_then(|raw| DateTime::parse_from_rfc2822(&raw).ok())
+                .map(|dt: DateTime<FixedOffset>| dt.with_timezone(&Utc));
+
+            if let Some(published) = published {
+                if published < recency_cutoff {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+
             let title = capture_rss_field(block, &NEWS_TITLE_RE).unwrap_or_default();
-            let link = capture_rss_field(block, &NEWS_LINK_RE).unwrap_or_default();
+            let raw_link = capture_rss_field(block, &NEWS_LINK_RE).unwrap_or_default();
+            let (link, rewrite) = AgentSystem::normalize_google_news_link(&raw_link);
+            if let Some(pair) = rewrite {
+                rewrites.push(pair);
+            }
 
             if title.is_empty() || link.is_empty() {
                 continue;
@@ -1114,9 +1586,13 @@ impl AgentSystem {
             });
 
             items.push((title, snippet, link));
+
+            if items.len() >= max_results {
+                break;
+            }
         }
 
-        Ok(items)
+        Ok((items, rewrites))
     }
 
     async fn execute_map_open(
