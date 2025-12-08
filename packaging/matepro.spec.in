@@ -13,7 +13,12 @@ ExclusiveArch:  x86_64
 
 %global cargo_target_dir %{_builddir}/cargo-target
 
+%if 0%{?rhel} >= 10
+BuildRequires:  rust-toolset
 BuildRequires:  cargo
+%else
+BuildRequires:  cargo
+%endif
 BuildRequires:  pkgconfig(gtk+-3.0)
 BuildRequires:  pkgconfig(gdk-pixbuf-2.0)
 BuildRequires:  pkgconfig(cairo)
