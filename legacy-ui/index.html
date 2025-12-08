@@ -52,57 +52,84 @@
         <div id="chat-screen" class="screen hidden">
             <!-- Header -->
             <header class="chat-header">
-                <div class="header-left">
-                    <span class="chat-icon">💬</span>
-                       <span class="app-title">MatePro</span>
-                       <span id="version-indicator" class="version-indicator hidden"></span>
-                       <span id="backend-indicator" class="backend-indicator hidden"></span>
-                    <select id="model-selector">
-                        <option value="">Seleziona modello...</option>
-                    </select>
+                <div class="header-title">
+                    <span class="chat-icon" aria-hidden="true">💬</span>
+                    <div class="title-content">
+                        <span class="app-title">MatePro</span>
+                        <div class="title-meta">
+                            <span id="version-indicator" class="version-indicator hidden"></span>
+                            <span id="backend-indicator" class="backend-indicator hidden"></span>
+                        </div>
+                    </div>
                 </div>
-                <div class="header-center">
-                    <label class="toggle-container">
-                        <input type="checkbox" id="agent-mode-toggle" checked>
-                        <span class="toggle-label">🤖 Modalità Agente</span>
-                    </label>
-                    <span id="iteration-counter" class="iteration-counter hidden">(0/5)</span>
-                    <button id="sql-config-btn" class="icon-btn" title="Configura SQL Server">🗄️ SQL</button>
-                    <button id="settings-btn" class="icon-btn" title="Impostazioni">⚙️</button>
-                    <button id="history-btn" class="icon-btn" title="Cronologia conversazioni">📜</button>
-                </div>
-                <div class="header-right">
-                    <button id="new-chat-btn" class="icon-btn" title="Nuova chat">⟲</button>
-                    <button id="disconnect-btn" class="icon-btn" title="Disconnetti">✕</button>
+                <div class="header-controls">
+                    <div class="control-block model-control">
+                        <label for="model-selector" class="control-label">Modello</label>
+                        <select id="model-selector">
+                            <option value="">Seleziona modello...</option>
+                        </select>
+                    </div>
+                    <div class="control-block toggle-control">
+                        <label class="pill-toggle" for="agent-mode-toggle">
+                            <input type="checkbox" id="agent-mode-toggle" checked>
+                            <span>Modalità agente</span>
+                        </label>
+                        <span id="iteration-counter" class="iteration-counter hidden">(0/5)</span>
+                    </div>
+                    <div class="control-block action-control">
+                        <button id="sql-config-btn" class="toolbar-btn" title="Configura SQL Server">SQL</button>
+                        <button id="settings-btn" class="toolbar-btn" title="Impostazioni">Impostazioni</button>
+                        <span class="control-divider" aria-hidden="true"></span>
+                        <button id="new-chat-btn" class="toolbar-btn primary" title="Nuova chat">Nuova chat</button>
+                        <button id="disconnect-btn" class="toolbar-btn subtle-danger" title="Disconnetti">Disconnetti</button>
+                    </div>
                 </div>
             </header>
 
-            <!-- Messages Area -->
-            <main id="messages" class="messages-container">
-                <div class="empty-state">
-                    <p class="empty-title">Inizia una conversazione</p>
-                    <p class="empty-subtitle">Scrivi un messaggio per iniziare</p>
-                </div>
-            </main>
-
-            <!-- Error Banner -->
-            <div id="error-banner" class="error-banner hidden">
-                <span id="error-text"></span>
-                <button id="close-error" class="close-btn">✕</button>
-            </div>
-
-            <!-- Input Area -->
-            <footer class="input-area">
-                <div id="attached-files" class="attached-files hidden"></div>
-                <div class="input-row">
-                    <textarea id="message-input" placeholder="Scrivi un messaggio..." rows="3"></textarea>
-                    <div class="input-buttons">
-                        <button id="attach-btn" class="attach-btn" title="Allega file">📎</button>
-                        <button id="send-btn" class="send-btn" disabled title="Invia (Ctrl+Enter)">▶</button>
+            <div class="chat-content">
+                <!-- History Sidebar -->
+                <aside id="history-sidebar" class="history-sidebar">
+                    <div class="history-sidebar-header">
+                        <h2>📜 Cronologia</h2>
+                        <button id="clear-history-btn" class="history-clear-btn" title="Cancella tutta la cronologia">Svuota</button>
                     </div>
+                    <div id="history-list" class="history-list">
+                        <div class="empty-history">
+                            <p>Nessuna conversazione salvata</p>
+                            <small>Le conversazioni verranno salvate automaticamente quando le termini</small>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Chat Area -->
+                <div class="chat-main">
+                    <main id="messages" class="messages-container">
+                        <div class="empty-state">
+                            <p class="empty-title">Inizia una conversazione</p>
+                            <p class="empty-subtitle">Scrivi un messaggio per iniziare</p>
+                        </div>
+                    </main>
+
+                    <!-- Error Banner -->
+                    <div id="error-banner" class="error-banner hidden">
+                        <span id="error-text"></span>
+                        <button id="close-error" class="close-btn">✕</button>
+                    </div>
+
+                    <!-- Input Area -->
+                    <footer class="input-area">
+                        <div id="attached-files" class="attached-files hidden"></div>
+                        <div class="input-row">
+                            <textarea id="message-input" placeholder="Scrivi un messaggio..." rows="3"></textarea>
+                            <div class="input-buttons">
+                                <button id="attach-btn" class="attach-btn" title="Allega file">📎</button>
+                                <button id="send-btn" class="send-btn" disabled title="Invia (Ctrl+Enter)">▶</button>
+                            </div>
+                        </div>
+                        <p class="input-hint">Premi Ctrl+Enter per inviare</p>
+                    </footer>
                 </div>
-                <p class="input-hint">Premi Ctrl+Enter per inviare</p>
-            </footer>
+            </div>
         </div>
 
         <!-- SQL Config Modal -->
@@ -212,29 +239,6 @@
                 </div>
             </div>
         </div>
-
-        <!-- History Modal -->
-        <div id="history-modal" class="modal hidden">
-            <div class="modal-content large">
-                <div class="modal-header">
-                    <h2>📜 Cronologia Conversazioni</h2>
-                    <button id="close-history-modal" class="close-btn">✕</button>
-                </div>
-                <div class="modal-body">
-                    <div id="history-list" class="history-list">
-                        <div class="empty-history">
-                            <p>Nessuna conversazione salvata</p>
-                            <small>Le conversazioni verranno salvate automaticamente quando le termini</small>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button id="clear-history-btn" class="danger">🗑️ Cancella tutto</button>
-                    <button id="close-history-btn" class="secondary">Chiudi</button>
-                </div>
-            </div>
-        </div>
-
     </div>
 
     <input type="file" id="file-input" accept=".pdf,.xlsx,.xls,.ods,.txt,.md,.csv" hidden>

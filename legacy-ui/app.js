@@ -104,11 +104,7 @@ const elements = {
     dataDirInfo: document.getElementById('data-dir-info'),
     dataDirPath: document.getElementById('data-dir-path'),
     
-    // History Modal
-    historyBtn: document.getElementById('history-btn'),
-    historyModal: document.getElementById('history-modal'),
-    closeHistoryModal: document.getElementById('close-history-modal'),
-    closeHistoryBtn: document.getElementById('close-history-btn'),
+    // History Sidebar
     historyList: document.getElementById('history-list'),
     clearHistoryBtn: document.getElementById('clear-history-btn'),
 };
@@ -796,6 +792,8 @@ async function loadModels() {
         
         state.selectedModel = models[0].name;
         showScreen('chat-screen');
+        await loadMemory();
+        renderHistoryList();
         elements.connectBtn.disabled = false;
 
         if (state.greetingMessage && !state.greetingShown) {
@@ -1529,6 +1527,9 @@ async function saveCurrentConversation() {
             });
             state.currentConversationId = id;
         }
+
+        await loadMemory();
+        renderHistoryList();
     } catch (error) {
         console.warn('Impossibile salvare la conversazione:', error);
     }
@@ -1544,6 +1545,14 @@ async function loadConversationFromMemory(conversationId) {
     state.currentIteration = 0;
     state.pendingToolCalls = [];
     state.currentConversationId = conversationId;
+    
+    if (conversation.model && elements.modelSelector) {
+        state.selectedModel = conversation.model;
+        const hasOption = Array.from(elements.modelSelector.options || []).some(opt => opt.value === conversation.model);
+        if (hasOption) {
+            elements.modelSelector.value = conversation.model;
+        }
+    }
     
     // Load messages
     conversation.messages.forEach(m => {
@@ -1562,9 +1571,9 @@ async function loadConversationFromMemory(conversationId) {
     
     // Render messages
     renderConversation();
-    
-    // Close modal
-    hideHistoryModal();
+
+    // Update sidebar highlight
+    renderHistoryList();
 }
 
 function renderConversation() {
@@ -1590,14 +1599,21 @@ function renderConversation() {
 async function deleteConversationFromMemory(conversationId) {
     try {
         await invoke('delete_conversation_from_memory', { id: conversationId });
-        state.memoryConversations = state.memoryConversations.filter(c => c.id !== conversationId);
         
-        // If we deleted the current conversation, reset
         if (state.currentConversationId === conversationId) {
             state.currentConversationId = null;
+            state.conversation = [];
+            state.pendingToolCalls = [];
+            state.currentIteration = 0;
+            state.attachedFiles = [];
+            state.messageHistoryIndex = -1;
+            renderConversation();
+            updateAttachedFiles();
+            updateIterationCounter();
+            hideError();
         }
         
-        // Re-render the history list
+        await loadMemory();
         renderHistoryList();
     } catch (error) {
         console.warn('Impossibile eliminare la conversazione:', error);
@@ -1613,6 +1629,16 @@ async function clearAllConversations() {
         await invoke('clear_all_conversations');
         state.memoryConversations = [];
         state.currentConversationId = null;
+        state.conversation = [];
+        state.pendingToolCalls = [];
+        state.currentIteration = 0;
+        state.attachedFiles = [];
+        state.messageHistoryIndex = -1;
+        renderConversation();
+        updateAttachedFiles();
+        updateIterationCounter();
+        hideError();
+        await loadMemory();
         renderHistoryList();
     } catch (error) {
         console.warn('Impossibile cancellare la cronologia:', error);
@@ -1621,6 +1647,11 @@ async function clearAllConversations() {
 
 function renderHistoryList() {
     if (!elements.historyList) return;
+
+    if (elements.clearHistoryBtn) {
+        const isEmpty = state.memoryConversations.length === 0;
+        elements.clearHistoryBtn.disabled = isEmpty;
+    }
     
     if (state.memoryConversations.length === 0) {
         elements.historyList.innerHTML = `
@@ -1642,9 +1673,10 @@ function renderHistoryList() {
         const dateStr = date.toLocaleDateString();
         const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const msgCount = conv.messages.filter(m => !m.hidden).length;
+        const isActive = state.currentConversationId === conv.id;
         
         return `
-            <div class="history-item" data-id="${escapeHtml(conv.id)}">
+            <div class="history-item${isActive ? ' active' : ''}" data-id="${escapeHtml(conv.id)}">
                 <div class="history-item-content">
                     <div class="history-item-title">${escapeHtml(conv.title)}</div>
                     <div class="history-item-meta">
@@ -1652,23 +1684,16 @@ function renderHistoryList() {
                         <span>💬 ${msgCount} messaggi</span>
                         ${conv.model ? `<span>🤖 ${escapeHtml(conv.model)}</span>` : ''}
                     </div>
+                    ${isActive ? '<span class="history-item-status">Conversazione attiva</span>' : ''}
                 </div>
                 <div class="history-item-actions">
-                    <button class="secondary load-conv-btn" data-id="${escapeHtml(conv.id)}" title="Carica">📂</button>
-                    <button class="danger delete-conv-btn" data-id="${escapeHtml(conv.id)}" title="Elimina">🗑️</button>
+                    <button class="delete-conv-btn" data-id="${escapeHtml(conv.id)}" title="Elimina conversazione">🗑️</button>
                 </div>
             </div>
         `;
     }).join('');
     
     // Add event listeners
-    elements.historyList.querySelectorAll('.load-conv-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            loadConversationFromMemory(btn.dataset.id);
-        });
-    });
-    
     elements.historyList.querySelectorAll('.delete-conv-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1684,21 +1709,6 @@ function renderHistoryList() {
             loadConversationFromMemory(item.dataset.id);
         });
     });
-}
-
-async function showHistoryModal() {
-    await loadMemory();
-    renderHistoryList();
-    
-    if (elements.historyModal) {
-        elements.historyModal.classList.remove('hidden');
-    }
-}
-
-function hideHistoryModal() {
-    if (elements.historyModal) {
-        elements.historyModal.classList.add('hidden');
-    }
 }
 
 // ============ NEW CHAT / DISCONNECT ============
@@ -1725,6 +1735,7 @@ async function newChat() {
     updateAttachedFiles();
     updateIterationCounter();
     hideError();
+    renderHistoryList();
 }
 
 async function disconnect() {
@@ -1743,6 +1754,10 @@ async function disconnect() {
     
     showScreen('setup-screen');
     elements.setupError.classList.add('hidden');
+    renderHistoryList();
+    updateAttachedFiles();
+    updateIterationCounter();
+    hideError();
 }
 
 // ============ EVENT LISTENERS ============
@@ -1835,16 +1850,7 @@ function initEventListeners() {
         elements.saveSettingsBtn.addEventListener('click', saveSettings);
     }
     
-    // History Modal
-    if (elements.historyBtn) {
-        elements.historyBtn.addEventListener('click', showHistoryModal);
-    }
-    if (elements.closeHistoryModal) {
-        elements.closeHistoryModal.addEventListener('click', hideHistoryModal);
-    }
-    if (elements.closeHistoryBtn) {
-        elements.closeHistoryBtn.addEventListener('click', hideHistoryModal);
-    }
+    // History Sidebar
     if (elements.clearHistoryBtn) {
         elements.clearHistoryBtn.addEventListener('click', clearAllConversations);
     }
@@ -1867,11 +1873,6 @@ function initEventListeners() {
         });
     }
     
-    if (elements.historyModal) {
-        elements.historyModal.addEventListener('click', (e) => {
-            if (e.target === elements.historyModal) hideHistoryModal();
-        });
-    }
 }
 
 // ============ INITIALIZATION ============
@@ -1883,6 +1884,8 @@ async function init() {
     await loadVersionIndicator();
     await loadGreeting();
     await loadSettings();
+    await loadMemory();
+    renderHistoryList();
     checkForUpdates();
     await scanNetwork();
 }
