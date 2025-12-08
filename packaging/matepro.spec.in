@@ -23,15 +23,17 @@ BuildRequires:  pkgconfig(cairo)
 BuildRequires:  pkgconfig(pango)
 BuildRequires:  pkgconfig(atk)
 %if 0%{?rhel} >= 10
-BuildRequires:  pkgconfig(webkit2gtk-4.0)
-BuildRequires:  pkgconfig(javascriptcoregtk-4.0)
-%else
 BuildRequires:  pkgconfig(webkit2gtk-4.1)
 BuildRequires:  pkgconfig(javascriptcoregtk-4.1)
+%else
+BuildRequires:  pkgconfig(webkit2gtk-4.0)
+BuildRequires:  pkgconfig(javascriptcoregtk-4.0)
 %endif
 BuildRequires:  pkgconfig(libsoup-3.0)
+%if 0%{?rhel} < 10
 BuildRequires:  libappindicator-gtk3-devel
 BuildRequires:  rust-packaging
+%endif
 BuildRequires:  pkgconfig(xkbcommon)
 BuildRequires:  pkgconfig(xcb-render)
 BuildRequires:  pkgconfig(xcb-shape)
@@ -42,12 +44,14 @@ BuildRequires:  desktop-file-utils
 
 Requires:       gtk3
 %if 0%{?rhel} >= 10
-Requires:       webkit2gtk4.0
-%else
 Requires:       webkit2gtk4.1
+%else
+Requires:       webkit2gtk4.0
 %endif
 Requires:       libsoup3
+%if 0%{?rhel} < 10
 Requires:       libappindicator-gtk3
+%endif
 Requires:       poppler-utils
 
 %description
