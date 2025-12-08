@@ -1,6 +1,6 @@
 [package]
 name = "matepro"
-version = "0.0.13"
+version = "0.0.14"
 edition = "2024"
 authors = ["Francesco Zanti <me@FrancescoZanti.dev>"]
 description = "Client Ollama con interfaccia grafica moderna per chattare con modelli LLM"

@@ -64,17 +64,14 @@
                 </div>
                 <div class="header-controls">
                     <div class="control-block model-control">
-                        <label for="model-selector" class="control-label">Modello</label>
-                        <select id="model-selector">
-                            <option value="">Seleziona modello...</option>
-                        </select>
-                    </div>
-                    <div class="control-block toggle-control">
-                        <label class="pill-toggle" for="agent-mode-toggle">
-                            <input type="checkbox" id="agent-mode-toggle" checked>
-                            <span>Modalità agente</span>
-                        </label>
-                        <span id="iteration-counter" class="iteration-counter hidden">(0/5)</span>
+                        <label for="model-selector" class="model-label">Modello</label>
+                        <div class="model-select-wrapper">
+                            <select id="model-selector">
+                                <option value="">Seleziona modello...</option>
+                            </select>
+                            <span class="model-select-caret" aria-hidden="true">▾</span>
+                        </div>
+                        <span id="iteration-counter" class="iteration-counter hidden" aria-live="polite"></span>
                     </div>
                     <div class="control-block action-control">
                         <button id="sql-config-btn" class="toolbar-btn" title="Configura SQL Server">SQL</button>
