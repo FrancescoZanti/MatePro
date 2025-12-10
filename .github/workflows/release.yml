@@ -311,7 +311,6 @@ jobs:
             fedora-43-x86_64
             fedora-42-x86_64
             fedora-rawhide-x86_64
-            rhel-10-x86_64
           )
 
           ARGS=()

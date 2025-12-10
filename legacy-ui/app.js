@@ -13,6 +13,7 @@ const state = {
     messageHistory: [],
     messageHistoryIndex: -1,
     attachedFiles: [],
+    agentMode: true,
     currentIteration: 0,
     maxIterations: 5,
     systemPromptAdded: false,
@@ -55,6 +56,7 @@ const elements = {
     
     // Chat
     modelSelector: document.getElementById('model-selector'),
+    agentModeToggle: document.getElementById('agent-mode-toggle'),
     iterationCounter: document.getElementById('iteration-counter'),
     sqlConfigBtn: document.getElementById('sql-config-btn'),
     newChatBtn: document.getElementById('new-chat-btn'),
@@ -912,7 +914,10 @@ function removeLoadingIndicator() {
 }
 
 async function getToolsDescription() {
-    return await invoke('get_tools_description');
+    if (state.agentMode) {
+        return await invoke('get_tools_description');
+    }
+    return '';
 }
 
 async function sendMessage() {
@@ -956,11 +961,11 @@ async function sendMessage() {
             systemContent += '\n\n**ISTRUZIONI PERSONALIZZATE DELL\'UTENTE:**\n' + state.customSystemPrompt.content.trim();
         }
         
-        const toolsDesc = await getToolsDescription();
-        if (typeof toolsDesc === 'string' && toolsDesc.trim().length > 0) {
-            systemContent += '\n\n' + toolsDesc.trim();
+        if (state.agentMode) {
+            const toolsDesc = await getToolsDescription();
+            systemContent += '\n\n' + toolsDesc;
+            systemContent += '\n\n**LINEE GUIDA:**\n- Usa i tool appropriati per le richieste dell\'utente.\n- Se la risposta richiede dati aggiornati o verifiche, esegui `web_search` e integra solo fonti considerate affidabili.\n- Quando ricevi note di ricerca dal backend, trattale come riferimenti da citare in formato [Titolo](URL) indicando il dominio.\n- Riassumi con parole tue e segnala eventuali incongruenze o assenza di dati aggiornati.';
         }
-        systemContent += '\n\n**LINEE GUIDA:**\n- Usa i tool appropriati per le richieste dell\'utente.\n- Se la risposta richiede dati aggiornati o verifiche, esegui `web_search` e integra solo fonti considerate affidabili.\n- Quando ricevi note di ricerca dal backend, trattale come riferimenti da citare in formato [Titolo](URL) indicando il dominio.\n- Riassumi con parole tue e segnala eventuali incongruenze o assenza di dati aggiornati.';
         
         state.conversation.push({ role: 'user', content: systemContent, hidden: true });
         state.conversation.push({ 
@@ -973,14 +978,16 @@ async function sendMessage() {
     
     state.conversation.push({ role: 'user', content: fullContent, hidden: false });
 
-    const newsQuery = detectNewsQuery(text);
-    if (newsQuery) {
-        const safeQuery = newsQuery.replace(/"/g, "'");
-        state.conversation.push({
-            role: 'user',
-            content: `PROMEMORIA AGENTE: L'utente sta chiedendo notizie o eventi attuali. Esegui il tool web_search con la query "${safeQuery}" (usa max_results=5) prima di rispondere. Riassumi i risultati aggiornati in italiano e cita le fonti principali usando collegamenti Markdown [Titolo](URL) e indicando il dominio della fonte.`,
-            hidden: true,
-        });
+    if (state.agentMode) {
+        const newsQuery = detectNewsQuery(text);
+        if (newsQuery) {
+            const safeQuery = newsQuery.replace(/"/g, "'");
+            state.conversation.push({
+                role: 'user',
+                content: `PROMEMORIA AGENTE: L'utente sta chiedendo notizie o eventi attuali. Esegui il tool web_search con la query "${safeQuery}" (usa max_results=5) prima di rispondere. Riassumi i risultati aggiornati in italiano e cita le fonti principali usando collegamenti Markdown [Titolo](URL) e indicando il dominio della fonte.`,
+                hidden: true,
+            });
+        }
     }
 
     if (text) {
@@ -1017,12 +1024,19 @@ async function processChat() {
         
         addMessage('assistant', response.content, response.timestamp);
         
-        const toolCalls = await invoke('parse_tool_calls', { response: response.content });
-
-        if (toolCalls.length > 0) {
-            state.pendingToolCalls = toolCalls;
-            await processNextToolCall();
+        // Check for tool calls if agent mode is enabled
+        if (state.agentMode) {
+            const toolCalls = await invoke('parse_tool_calls', { response: response.content });
+            
+            if (toolCalls.length > 0) {
+                state.pendingToolCalls = toolCalls;
+                await processNextToolCall();
+            } else {
+                // Save conversation if no more tool calls
+                await saveCurrentConversation();
+            }
         } else {
+            // Save conversation in non-agent mode
             await saveCurrentConversation();
         }
         
@@ -1033,7 +1047,6 @@ async function processChat() {
     }
     
     state.isProcessing = false;
-    updateIterationCounter();
 }
 
 async function processNextToolCall() {
@@ -1315,13 +1328,8 @@ function navigateMessageHistory(direction) {
 }
 
 function updateIterationCounter() {
-    if (!elements.iterationCounter) {
-        return;
-    }
-
-    const shouldShow = state.isProcessing || state.currentIteration > 0;
-    if (shouldShow) {
-        elements.iterationCounter.textContent = `${state.currentIteration}/${state.maxIterations}`;
+    if (state.agentMode) {
+        elements.iterationCounter.textContent = `(${state.currentIteration}/${state.maxIterations})`;
         elements.iterationCounter.classList.remove('hidden');
     } else {
         elements.iterationCounter.classList.add('hidden');
@@ -1767,6 +1775,11 @@ function initEventListeners() {
         state.selectedModel = e.target.value;
     });
     
+    elements.agentModeToggle.addEventListener('change', (e) => {
+        state.agentMode = e.target.checked;
+        updateIterationCounter();
+    });
+    
     elements.sendBtn.addEventListener('click', sendMessage);
     elements.attachBtn.addEventListener('click', attachFile);
     elements.fileInput.addEventListener('change', handleFileSelect);
@@ -1866,6 +1879,7 @@ function initEventListeners() {
 
 async function init() {
     initEventListeners();
+    elements.agentModeToggle.checked = state.agentMode;
     updateIterationCounter();
     await loadVersionIndicator();
     await loadGreeting();
