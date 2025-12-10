@@ -22,7 +22,7 @@ BuildRequires:  pkgconfig(gdk-pixbuf-2.0)
 BuildRequires:  pkgconfig(cairo)
 BuildRequires:  pkgconfig(pango)
 BuildRequires:  pkgconfig(atk)
-%if 0%{?rhel} >= 10
+%if 0%{?rhel} >= 10 || 0%{?fedora} >= 42
 BuildRequires:  pkgconfig(webkit2gtk-4.1)
 BuildRequires:  pkgconfig(javascriptcoregtk-4.1)
 %else
@@ -43,7 +43,7 @@ BuildRequires:  openssl-devel
 BuildRequires:  desktop-file-utils
 
 Requires:       gtk3
-%if 0%{?rhel} >= 10
+%if 0%{?rhel} >= 10 || 0%{?fedora} >= 42
 Requires:       webkit2gtk4.1
 %else
 Requires:       webkit2gtk4.0

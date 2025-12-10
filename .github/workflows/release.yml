@@ -333,9 +333,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
+        shell: pwsh
         run: |
           choco install -y nsis
-          choco install -y wixtoolset --version=3.14.0.6526
+          choco install -y wixtoolset --version=3.14.0.6526 --allow-downgrade
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "WiX install returned non-zero exit code. Attempting to align installed version."
+            choco upgrade -y wixtoolset --version=3.14.0.6526 --allow-downgrade
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "WiX toolset installation failed"
+          }
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
