@@ -6,6 +6,7 @@
 
 mod agent;
 mod aiconnect;
+mod calendar_integration;
 mod local_storage;
 mod mcp_sql;
 
@@ -16,9 +17,11 @@ use aiconnect::{
 use anyhow::Result;
 use calamine::{open_workbook, Ods, Reader, Xls, Xlsx};
 use chrono::{DateTime, Utc};
-use local_storage::{
-    CalendarEvent, CustomSystemPrompt, LocalMemory, MemoryMessage,
+use calendar_integration::{
+    CalendarIntegrationStatus, CreateRemoteEventRequest, OutlookDeviceFlowPoll,
+    OutlookDeviceFlowStart, RemoteCalendarEvent,
 };
+use local_storage::{CalendarEvent, CustomSystemPrompt, LocalMemory, MemoryMessage};
 use lopdf::Document;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -1016,6 +1019,143 @@ fn export_calendar_to_ics() -> Result<String, String> {
     local_storage::export_calendar_to_ics().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_calendar_integrations_status() -> Result<CalendarIntegrationStatus, String> {
+    calendar_integration::get_calendar_status().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_outlook_calendar_credentials(
+    client_id: String,
+    tenant: Option<String>,
+) -> Result<CalendarIntegrationStatus, String> {
+    calendar_integration::set_outlook_credentials(client_id, tenant).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn disconnect_outlook_calendar() -> Result<CalendarIntegrationStatus, String> {
+    calendar_integration::disconnect_outlook().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_google_calendar_credentials(
+    client_id: String,
+    client_secret: Option<String>,
+    calendar_id: Option<String>,
+) -> Result<CalendarIntegrationStatus, String> {
+    let _ = client_secret;
+    calendar_integration::set_google_credentials(client_id, calendar_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn disconnect_google_calendar() -> Result<CalendarIntegrationStatus, String> {
+    calendar_integration::disconnect_google().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn start_outlook_calendar_device_flow() -> Result<OutlookDeviceFlowStart, String> {
+    calendar_integration::start_outlook_device_flow()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn start_google_calendar_device_flow() -> Result<OutlookDeviceFlowStart, String> {
+    calendar_integration::start_google_device_flow()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn poll_outlook_calendar_device_flow() -> Result<OutlookDeviceFlowPoll, String> {
+    calendar_integration::poll_outlook_device_flow()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn poll_google_calendar_device_flow() -> Result<OutlookDeviceFlowPoll, String> {
+    calendar_integration::poll_google_device_flow()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_outlook_calendar_events(
+    limit: Option<usize>,
+) -> Result<Vec<RemoteCalendarEvent>, String> {
+    calendar_integration::list_outlook_events(limit.unwrap_or(10))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_google_calendar_events(
+    limit: Option<usize>,
+) -> Result<Vec<RemoteCalendarEvent>, String> {
+    calendar_integration::list_google_events(limit.unwrap_or(10))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn create_outlook_calendar_event(
+    event: CreateRemoteEventRequest,
+) -> Result<RemoteCalendarEvent, String> {
+    calendar_integration::create_outlook_event(event)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn create_google_calendar_event(
+    event: CreateRemoteEventRequest,
+) -> Result<RemoteCalendarEvent, String> {
+    calendar_integration::create_google_event(event)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn sync_calendar_event_to_integrations(id: String) -> Result<(), String> {
+    let events = local_storage::load_calendar_events().map_err(|e| e.to_string())?;
+    let event = events
+        .into_iter()
+        .find(|ev| ev.id == id)
+        .ok_or_else(|| "Evento non trovato".to_string())?;
+
+    let mut errors: Vec<String> = Vec::new();
+
+    if let Err(err) = calendar_integration::push_local_event_to_outlook(&event).await {
+        errors.push(format!("Outlook: {}", err));
+    }
+
+    if let Err(err) = calendar_integration::push_local_event_to_google(&event).await {
+        errors.push(format!("Google: {}", err));
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join(" | "))
+    }
+}
+
+#[tauri::command]
+async fn is_outlook_calendar_connected() -> Result<bool, String> {
+    calendar_integration::is_outlook_connected()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn is_google_calendar_connected() -> Result<bool, String> {
+    calendar_integration::is_google_connected()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ============ AICONNECT COMMANDS ============
 
 /// Discovery result for AIConnect and Ollama services
@@ -1266,6 +1406,22 @@ fn main() {
             delete_calendar_event,
             clear_calendar_events,
             export_calendar_to_ics,
+            get_calendar_integrations_status,
+            set_outlook_calendar_credentials,
+            disconnect_outlook_calendar,
+            start_outlook_calendar_device_flow,
+            poll_outlook_calendar_device_flow,
+            list_outlook_calendar_events,
+            create_outlook_calendar_event,
+            set_google_calendar_credentials,
+            disconnect_google_calendar,
+            start_google_calendar_device_flow,
+            poll_google_calendar_device_flow,
+            list_google_calendar_events,
+            create_google_calendar_event,
+            sync_calendar_event_to_integrations,
+            is_outlook_calendar_connected,
+            is_google_calendar_connected,
             // AIConnect commands
             scan_services,
             get_backend_config,

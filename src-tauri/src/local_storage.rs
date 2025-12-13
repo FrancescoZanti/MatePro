@@ -14,6 +14,8 @@ const DATA_DIR_NAME: &str = "MatePro";
 const MEMORY_FILE_NAME: &str = "memory.json";
 /// File name for storing custom system prompt
 const SYSTEM_PROMPT_FILE_NAME: &str = "system_prompt.json";
+/// File name for storing calendar integrations
+const CALENDAR_INTEGRATIONS_FILE_NAME: &str = "calendar_integrations.json";
 /// File name for storing calendar events
 const CALENDAR_FILE_NAME: &str = "calendar.json";
 
@@ -110,6 +112,122 @@ impl CalendarData {
         Self {
             version: 1,
             events: Vec::new(),
+        }
+    }
+}
+
+/// Pending device flow information for OAuth-based integrations
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PendingDeviceFlow {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub expires_at: DateTime<Utc>,
+    pub interval: u64,
+    pub message: Option<String>,
+}
+
+/// Pending PKCE authorization flow (OAuth2 Authorization Code + PKCE)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PendingPkceFlow {
+    /// Full authorization URL to open in the browser
+    pub authorization_url: String,
+    /// Redirect URI bound locally (loopback)
+    pub redirect_uri: String,
+    /// PKCE verifier (kept locally)
+    pub code_verifier: String,
+    /// CSRF state
+    pub state: String,
+    /// Authorization code ricevuto dal redirect (quando presente)
+    #[serde(default)]
+    pub authorization_code: Option<String>,
+    /// Eventuale errore restituito dal provider OAuth
+    #[serde(default)]
+    pub error: Option<String>,
+    /// When the flow expires
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub expires_at: DateTime<Utc>,
+    /// Optional message surfaced to the UI
+    pub message: Option<String>,
+}
+
+/// Configuration for the Outlook calendar integration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OutlookIntegrationConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub tenant: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub pending: Option<PendingDeviceFlow>,
+    #[serde(default)]
+    pub pending_pkce: Option<PendingPkceFlow>,
+    #[serde(default)]
+    pub access_token: Option<String>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    #[serde(with = "chrono::serde::ts_seconds_option")]
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    #[serde(with = "chrono::serde::ts_seconds_option")]
+    pub last_sync_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub time_zone: Option<String>,
+}
+
+/// Configuration for the Google Calendar integration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GoogleCalendarIntegrationConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub calendar_id: Option<String>,
+    #[serde(default)]
+    pub pending: Option<PendingDeviceFlow>,
+    #[serde(default)]
+    pub pending_pkce: Option<PendingPkceFlow>,
+    #[serde(default)]
+    pub access_token: Option<String>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    #[serde(with = "chrono::serde::ts_seconds_option")]
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    #[serde(with = "chrono::serde::ts_seconds_option")]
+    pub last_sync_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub time_zone: Option<String>,
+}
+
+/// Stored calendar integrations
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CalendarIntegrations {
+    pub version: u32,
+    #[serde(default)]
+    pub outlook: Option<OutlookIntegrationConfig>,
+    #[serde(default)]
+    pub google: Option<GoogleCalendarIntegrationConfig>,
+}
+
+impl CalendarIntegrations {
+    pub fn new() -> Self {
+        Self {
+            version: 1,
+            outlook: None,
+            google: None,
         }
     }
 }
@@ -268,6 +386,36 @@ pub fn get_data_directory() -> Result<String> {
     Ok(data_dir.to_string_lossy().to_string())
 }
 
+fn load_calendar_integrations_data() -> Result<CalendarIntegrations> {
+    let data_dir = get_data_dir()?;
+    let integrations_path = data_dir.join(CALENDAR_INTEGRATIONS_FILE_NAME);
+
+    if !integrations_path.exists() {
+        return Ok(CalendarIntegrations::new());
+    }
+
+    let content = fs::read_to_string(&integrations_path)
+        .context("Impossibile leggere il file delle integrazioni calendario")?;
+
+    let integrations: CalendarIntegrations = serde_json::from_str(&content)
+        .context("Impossibile analizzare il file delle integrazioni calendario")?;
+
+    Ok(integrations)
+}
+
+fn save_calendar_integrations_data(integrations: &CalendarIntegrations) -> Result<()> {
+    let data_dir = get_data_dir()?;
+    let integrations_path = data_dir.join(CALENDAR_INTEGRATIONS_FILE_NAME);
+
+    let content = serde_json::to_string_pretty(integrations)
+        .context("Impossibile serializzare le integrazioni calendario")?;
+
+    fs::write(&integrations_path, content)
+        .context("Impossibile salvare il file delle integrazioni calendario")?;
+
+    Ok(())
+}
+
 fn load_calendar_data() -> Result<CalendarData> {
     let data_dir = get_data_dir()?;
     let calendar_path = data_dir.join(CALENDAR_FILE_NAME);
@@ -424,6 +572,16 @@ pub fn export_calendar_to_ics() -> Result<String> {
         .context("Impossibile scrivere il file ICS")?;
 
     Ok(ics_path.to_string_lossy().to_string())
+}
+
+/// Load stored calendar integrations
+pub fn load_calendar_integrations() -> Result<CalendarIntegrations> {
+    load_calendar_integrations_data()
+}
+
+/// Save calendar integrations to disk
+pub fn save_calendar_integrations(integrations: &CalendarIntegrations) -> Result<()> {
+    save_calendar_integrations_data(integrations)
 }
 
 #[cfg(test)]

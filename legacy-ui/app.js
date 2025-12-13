@@ -36,6 +36,41 @@ const state = {
     memoryContextInjected: false,
     calendarEvents: [],
     calendarStatusTimeout: null,
+    integrations: {
+        outlook: {
+            configured: false,
+            connected: false,
+            pending: false,
+            tenant: null,
+            clientId: null,
+            message: null,
+            expiresAt: null,
+            userCode: null,
+            verificationUri: null,
+            interval: 5,
+        },
+        google: {
+            configured: false,
+            connected: false,
+            pending: false,
+            clientId: null,
+            calendarId: 'primary',
+            message: null,
+            expiresAt: null,
+            userCode: null,
+            verificationUri: null,
+            interval: 5,
+        },
+    },
+    integrationPolls: {
+        outlook: null,
+        google: null,
+    },
+    integrationPrompts: {
+        googleCredentials: false,
+        outlookCredentials: false,
+    },
+    pendingIntegrationStep: null,
 };
 
 // ============ DOM ELEMENTS ============
@@ -337,6 +372,602 @@ function showCalendarStatus(message, isError = false) {
             elements.calendarStatus.classList.add('hidden');
         }
     }, 4000);
+}
+
+function clearOutlookPollTimer() {
+    if (state.integrationPolls.outlook) {
+        clearTimeout(state.integrationPolls.outlook);
+        state.integrationPolls.outlook = null;
+    }
+}
+
+function clearGooglePollTimer() {
+    if (state.integrationPolls.google) {
+        clearTimeout(state.integrationPolls.google);
+        state.integrationPolls.google = null;
+    }
+}
+
+function applyOutlookStatus(rawStatus = {}) {
+    state.integrations.outlook = {
+        configured: Boolean(rawStatus.configured),
+        connected: Boolean(rawStatus.connected),
+        pending: Boolean(rawStatus.pending),
+        tenant: rawStatus.tenant || null,
+        clientId: rawStatus.client_id || null,
+        message: rawStatus.message || null,
+        expiresAt: rawStatus.expires_at || null,
+        userCode: rawStatus.user_code || null,
+        verificationUri: rawStatus.verification_uri || null,
+        interval: rawStatus.interval || 5,
+    };
+
+    if (state.integrations.outlook.pending) {
+        scheduleOutlookPoll(state.integrations.outlook.interval);
+    } else {
+        clearOutlookPollTimer();
+    }
+}
+
+function applyGoogleStatus(rawStatus = {}) {
+    state.integrations.google = {
+        configured: Boolean(rawStatus.configured),
+        connected: Boolean(rawStatus.connected),
+        pending: Boolean(rawStatus.pending),
+        clientId: rawStatus.client_id || null,
+        calendarId: rawStatus.calendar_id || 'primary',
+        message: rawStatus.message || null,
+        expiresAt: rawStatus.expires_at || null,
+        userCode: rawStatus.user_code || null,
+        verificationUri: rawStatus.verification_uri || null,
+        interval: rawStatus.interval || 5,
+    };
+
+    if (state.integrations.google.pending) {
+        scheduleGooglePoll(state.integrations.google.interval);
+    } else {
+        clearGooglePollTimer();
+    }
+}
+
+async function refreshCalendarIntegrationsStatus(options = {}) {
+    try {
+        const status = await invoke('get_calendar_integrations_status');
+        if (status && status.outlook) {
+            applyOutlookStatus(status.outlook);
+        }
+        if (status && status.google) {
+            applyGoogleStatus(status.google);
+        }
+        return status;
+    } catch (error) {
+        if (!options.silent) {
+            console.warn('Impossibile aggiornare lo stato delle integrazioni calendario:', error);
+            showCalendarStatus('Impossibile ottenere lo stato delle integrazioni', true);
+        }
+        return null;
+    }
+}
+
+function scheduleOutlookPoll(intervalSeconds = 5) {
+    clearOutlookPollTimer();
+    const delay = Math.max(2000, (intervalSeconds || 5) * 1000);
+    state.integrationPolls.outlook = setTimeout(() => {
+        pollOutlookDeviceFlowOnce().catch(error => {
+            console.warn('Polling Outlook fallito:', error);
+        });
+    }, delay);
+}
+
+async function pollOutlookDeviceFlowOnce() {
+    try {
+        const result = await invoke('poll_outlook_calendar_device_flow');
+        switch (result.status) {
+            case 'pending':
+                scheduleOutlookPoll(result.retry_in || state.integrations.outlook.interval || 5);
+                if (result.message) {
+                    showCalendarStatus(result.message, false);
+                }
+                break;
+            case 'completed':
+                await refreshCalendarIntegrationsStatus({ silent: true });
+                showCalendarStatus('Outlook collegato con successo');
+                addAssistantResponse('Ho collegato Outlook al calendario e sincronizzerò i nuovi eventi.');
+                break;
+            case 'expired':
+            case 'declined':
+                await refreshCalendarIntegrationsStatus({ silent: true });
+                showCalendarStatus(result.message || 'Connessione Outlook non completata', true);
+                break;
+            case 'error':
+                showCalendarStatus(result.message || 'Errore durante il collegamento a Outlook', true);
+                scheduleOutlookPoll(result.retry_in || state.integrations.outlook.interval || 6);
+                break;
+            default:
+                clearOutlookPollTimer();
+                break;
+        }
+    } catch (error) {
+        showCalendarStatus('Errore durante il collegamento a Outlook', true);
+        scheduleOutlookPoll((state.integrations.outlook.interval || 5) + 2);
+        throw error;
+    }
+}
+
+function scheduleGooglePoll(intervalSeconds = 5) {
+    clearGooglePollTimer();
+    const delay = Math.max(2000, (intervalSeconds || 5) * 1000);
+    state.integrationPolls.google = setTimeout(() => {
+        pollGoogleDeviceFlowOnce().catch(error => {
+            console.warn('Polling Google Calendar fallito:', error);
+        });
+    }, delay);
+}
+
+async function pollGoogleDeviceFlowOnce() {
+    try {
+        const result = await invoke('poll_google_calendar_device_flow');
+        switch (result.status) {
+            case 'pending':
+                scheduleGooglePoll(result.retry_in || state.integrations.google.interval || 5);
+                if (result.message) {
+                    showCalendarStatus(result.message, false);
+                }
+                break;
+            case 'completed':
+                await refreshCalendarIntegrationsStatus({ silent: true });
+                showCalendarStatus('Google Calendar collegato con successo');
+                addAssistantResponse('Ho collegato Google Calendar al calendario e sincronizzerò i nuovi eventi.');
+                break;
+            case 'expired':
+            case 'declined':
+                await refreshCalendarIntegrationsStatus({ silent: true });
+                showCalendarStatus(result.message || 'Connessione Google Calendar non completata', true);
+                break;
+            case 'error':
+                showCalendarStatus(result.message || 'Errore durante il collegamento a Google Calendar', true);
+                scheduleGooglePoll(result.retry_in || state.integrations.google.interval || 6);
+                break;
+            default:
+                clearGooglePollTimer();
+                break;
+        }
+    } catch (error) {
+        showCalendarStatus('Errore durante il collegamento a Google Calendar', true);
+        scheduleGooglePoll((state.integrations.google.interval || 5) + 2);
+        throw error;
+    }
+}
+
+function parseOutlookCredentials(text) {
+    if (!text) return null;
+    const clientMatch = text.match(/client(?:\s+outlook)?(?:\s+id)?\s*[:=\-]?\s*([a-z0-9-]{6,})/i);
+    if (!clientMatch) {
+        return null;
+    }
+    const tenantMatch = text.match(/tenant\s*[:=\-]?\s*([a-z0-9.-]+)/i);
+    return {
+        clientId: clientMatch[1].trim(),
+        tenant: tenantMatch ? tenantMatch[1].trim() : 'common',
+    };
+}
+
+function parseGoogleCredentials(text) {
+    if (!text) return null;
+    const clientMatch = text.match(/client(?:\s+google)?(?:\s+id)?\s*[:=\-]?\s*([a-z0-9._\-]{6,})/i);
+    const secretMatch = text.match(/secret(?:\s+google)?\s*[:=\-]?\s*([a-z0-9_\-]{6,})/i);
+    if (!clientMatch) {
+        return null;
+    }
+    const calendarMatch = text.match(/calendar(?:\s+id)?\s*[:=\-]?\s*([^\s]+)/i);
+    return {
+        clientId: clientMatch[1].trim(),
+        clientSecret: secretMatch ? secretMatch[1].trim() : null,
+        calendarId: calendarMatch ? calendarMatch[1].trim() : 'primary',
+    };
+}
+
+function buildOutlookEventsSummary(events) {
+    if (!Array.isArray(events) || events.length === 0) {
+        return 'Non ho trovato eventi futuri su Outlook.';
+    }
+
+    const lines = ['Ecco i prossimi impegni presenti su Outlook:'];
+    events.slice(0, 10).forEach(event => {
+        const start = event.start ? new Date(event.start) : null;
+        const end = event.end ? new Date(event.end) : null;
+        const subject = event.subject || 'Evento';
+        const timeLabel = start
+            ? `${start.toLocaleDateString()} ${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : 'data sconosciuta';
+        const endLabel = end
+            ? ` → ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : '';
+        lines.push(`• ${subject} (${timeLabel}${endLabel})`);
+    });
+
+    return lines.join('\n');
+}
+
+function buildGoogleEventsSummary(events) {
+    if (!Array.isArray(events) || events.length === 0) {
+        return 'Non ho trovato eventi futuri su Google Calendar.';
+    }
+
+    const lines = ['Ecco i prossimi impegni presenti su Google Calendar:'];
+    events.slice(0, 10).forEach(event => {
+        const start = event.start ? new Date(event.start) : null;
+        const end = event.end ? new Date(event.end) : null;
+        const subject = event.subject || 'Evento';
+        const timeLabel = start
+            ? `${start.toLocaleDateString()} ${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : 'data sconosciuta';
+        const endLabel = end
+            ? ` → ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : '';
+        lines.push(`• ${subject} (${timeLabel}${endLabel})`);
+    });
+
+    return lines.join('\n');
+}
+
+async function startOutlookDeviceFlowWithPrompt() {
+    try {
+        const flow = await invoke('start_outlook_calendar_device_flow');
+        state.pendingIntegrationStep = null;
+        await refreshCalendarIntegrationsStatus({ silent: true });
+        const expiresLabel = flow.expires_at
+            ? `Il link scade alle ${new Date(flow.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+            : '';
+        const link = flow.verification_uri
+            ? `[Clicca qui per autorizzare il collegamento a Outlook Calendar](${flow.verification_uri})`
+            : 'Non ho ricevuto un link di autorizzazione da Microsoft.';
+        const codeFallback = flow.user_code
+            ? `Se Microsoft ti chiede un codice, usa: \`${flow.user_code}\`.`
+            : '';
+
+        addAssistantResponse([
+            link,
+            expiresLabel,
+            codeFallback,
+            'Dopo aver completato l’autorizzazione nel browser, qui confermerò automaticamente il collegamento.'
+        ].filter(Boolean).join('\n'));
+        showCalendarStatus('In attesa di autorizzazione Outlook');
+        scheduleOutlookPoll(flow.interval || 5);
+        return true;
+    } catch (error) {
+        console.error('Impossibile avviare il device flow Outlook:', error);
+        showCalendarStatus('Errore nell\'avvio del collegamento Outlook', true);
+        addAssistantResponse('Non riesco ad avviare il collegamento Outlook. Controlla il Client ID e riprova.');
+        return true;
+    }
+}
+
+async function startGoogleDeviceFlowWithPrompt() {
+    try {
+        const flow = await invoke('start_google_calendar_device_flow');
+        state.pendingIntegrationStep = null;
+        await refreshCalendarIntegrationsStatus({ silent: true });
+        const expiresLabel = flow.expires_at
+            ? `Il link scade alle ${new Date(flow.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+            : '';
+        const link = flow.verification_uri
+            ? `[Clicca qui per autorizzare il collegamento a Google Calendar](${flow.verification_uri})`
+            : 'Non ho ricevuto un link di autorizzazione da Google.';
+        const codeFallback = flow.user_code
+            ? `Se Google ti chiede un codice, usa: \`${flow.user_code}\`.`
+            : '';
+
+        addAssistantResponse([
+            link,
+            expiresLabel,
+            codeFallback,
+            'Dopo aver completato l’autorizzazione nel browser, qui confermerò automaticamente il collegamento.'
+        ].filter(Boolean).join('\n'));
+        showCalendarStatus('In attesa di autorizzazione Google Calendar');
+        scheduleGooglePoll(flow.interval || 5);
+        return true;
+    } catch (error) {
+        console.error('Impossibile avviare il device flow Google Calendar:', error);
+        showCalendarStatus('Errore nell\'avvio del collegamento Google Calendar', true);
+        addAssistantResponse('Non riesco ad avviare il collegamento Google Calendar. Controlla il Client ID e riprova.');
+        return true;
+    }
+}
+
+async function handleCalendarIntegrationCommand(text) {
+    if (!text || typeof text !== 'string') {
+        return false;
+    }
+
+    const normalized = normalizeTextForMatch(text);
+
+    if (state.pendingIntegrationStep === 'outlook_credentials') {
+        const parsed = parseOutlookCredentials(text);
+        if (!parsed) {
+            addAssistantResponse('Per collegare Outlook inviami un messaggio nel formato: "Client Outlook: <client_id> Tenant: <tenant facoltativo>".');
+            return true;
+        }
+
+        try {
+            await invoke('set_outlook_calendar_credentials', {
+                clientId: parsed.clientId,
+                tenant: parsed.tenant,
+            });
+            addAssistantResponse('Credenziali Outlook salvate. Avvio la procedura di collegamento...');
+            return await startOutlookDeviceFlowWithPrompt();
+        } catch (error) {
+            console.error('Errore salvataggio credenziali Outlook:', error);
+            showCalendarStatus('Credenziali Outlook non valide', true);
+            addAssistantResponse('Non riesco a salvare le credenziali Outlook. Controlla Client ID e tenant.');
+            return true;
+        }
+    }
+
+    if (state.pendingIntegrationStep === 'google_credentials') {
+        const parsed = parseGoogleCredentials(text);
+        if (!parsed) {
+            addAssistantResponse('Per collegare Google Calendar inviami un messaggio nel formato: "Client Google: <client_id> CalendarId: <facoltativo>".');
+            return true;
+        }
+
+        try {
+            await invoke('set_google_calendar_credentials', {
+                clientId: parsed.clientId,
+                clientSecret: parsed.clientSecret || null,
+                calendarId: parsed.calendarId,
+            });
+            addAssistantResponse('Credenziali Google salvate. Avvio la procedura di collegamento...');
+            return await startGoogleDeviceFlowWithPrompt();
+        } catch (error) {
+            console.error('Errore salvataggio credenziali Google:', error);
+            showCalendarStatus('Credenziali Google non valide', true);
+            addAssistantResponse('Non riesco a salvare le credenziali Google. Controlla il Client ID e riprova.');
+            return true;
+        }
+    }
+
+    const mentionsOutlook = normalized.includes('outlook');
+    const mentionsGoogle = normalized.includes('google') || normalized.includes('gcal');
+
+    if (!mentionsOutlook && !mentionsGoogle) {
+        return false;
+    }
+
+    if (mentionsGoogle) {
+        if (/disconnetti|scollega|rimuovi|dimentica/.test(normalized)) {
+            try {
+                clearGooglePollTimer();
+                await invoke('disconnect_google_calendar');
+                await refreshCalendarIntegrationsStatus({ silent: true });
+                addAssistantResponse('Ho disconnesso Google Calendar dal calendario.');
+            } catch (error) {
+                console.error('Errore durante la disconnessione di Google Calendar:', error);
+                showCalendarStatus('Impossibile disconnettere Google Calendar', true);
+                addAssistantResponse('Non sono riuscito a disconnettere Google Calendar. Riprova più tardi.');
+            }
+            return true;
+        }
+
+        if (/mostra|lista|elenca|dammi|visualizza/.test(normalized) && /event/i.test(normalized)) {
+            await refreshCalendarIntegrationsStatus({ silent: true });
+            if (!state.integrations.google.connected) {
+                addAssistantResponse('Google Calendar non risulta collegato. Puoi chiedermi "Collega Google Calendar" per avviare la procedura.');
+                return true;
+            }
+            try {
+                const events = await invoke('list_google_calendar_events', { limit: 10 });
+                addAssistantResponse(buildGoogleEventsSummary(events));
+            } catch (error) {
+                console.error('Errore durante il recupero degli eventi Google Calendar:', error);
+                showCalendarStatus('Impossibile ottenere gli eventi Google Calendar', true);
+                addAssistantResponse('Non riesco a leggere gli eventi da Google Calendar in questo momento.');
+            }
+            return true;
+        }
+
+        if (/collega|connetti|configura|autorizza|sincronizza/.test(normalized)) {
+            const status = await refreshCalendarIntegrationsStatus({ silent: true });
+            if (!status || !status.google) {
+                addAssistantResponse('Non riesco a verificare lo stato di Google Calendar. Riprova più tardi.');
+                return true;
+            }
+
+            if (!state.integrations.google.configured) {
+                state.pendingIntegrationStep = 'google_credentials';
+                if (!state.integrationPrompts.googleCredentials) {
+                    state.integrationPrompts.googleCredentials = true;
+                    addAssistantResponse('Prima posso generare il link di autorizzazione, ma devo configurare Google Calendar (una tantum) con il Client ID. Inviami: "Client Google: <client_id> CalendarId: <facoltativo>".');
+                } else {
+                    addAssistantResponse('Mi serve ancora il Client ID di Google per poter generare il link di autorizzazione.');
+                }
+                return true;
+            }
+
+            if (state.integrations.google.connected) {
+                addAssistantResponse('Google Calendar risulta già collegato. Posso comunque mostrare o sincronizzare gli eventi se necessario.');
+                return true;
+            }
+
+            if (state.integrations.google.pending) {
+                const link = state.integrations.google.verificationUri
+                    ? `[Clicca qui per autorizzare Google Calendar](${state.integrations.google.verificationUri})`
+                    : (state.integrations.google.message || 'Attendo che tu autorizzi la connessione su Google.');
+                const codeFallback = state.integrations.google.userCode
+                    ? `Se Google ti chiede un codice, usa: \`${state.integrations.google.userCode}\`.`
+                    : '';
+                addAssistantResponse([link, codeFallback].filter(Boolean).join('\n'));
+                scheduleGooglePoll(state.integrations.google.interval || 5);
+                return true;
+            }
+
+            return await startGoogleDeviceFlowWithPrompt();
+        }
+
+        if (/stato|verifica|controlla/.test(normalized)) {
+            const status = await refreshCalendarIntegrationsStatus({ silent: true });
+            if (!status || !status.google) {
+                addAssistantResponse('Non riesco a ottenere lo stato attuale di Google Calendar.');
+                return true;
+            }
+
+            if (state.integrations.google.connected) {
+                addAssistantResponse('Google Calendar è collegato e pronto per sincronizzare il calendario.');
+            } else if (state.integrations.google.pending) {
+                const link = state.integrations.google.verificationUri
+                    ? `[Clicca qui per autorizzare Google Calendar](${state.integrations.google.verificationUri})`
+                    : 'Sto ancora attendendo l\'autorizzazione su Google.';
+                const codeFallback = state.integrations.google.userCode
+                    ? `Se Google ti chiede un codice, usa: \`${state.integrations.google.userCode}\`.`
+                    : '';
+                addAssistantResponse([link, codeFallback].filter(Boolean).join('\n'));
+            } else if (state.integrations.google.configured) {
+                addAssistantResponse('Ho le credenziali ma Google Calendar non è ancora autorizzato. Scrivi "Collega Google Calendar" per avviare il codice di autorizzazione.');
+            } else {
+                addAssistantResponse('Google Calendar non è configurato. Forniscimi il Client ID per procedere.');
+            }
+            return true;
+        }
+
+        if (normalized.includes('client') && (normalized.includes('google') || normalized.includes('gcal') || normalized.includes('secret'))) {
+            const parsed = parseGoogleCredentials(text);
+            if (!parsed) {
+                addAssistantResponse('Non ho riconosciuto il formato delle credenziali. Usa: "Client Google: <client_id> CalendarId: <facoltativo>".');
+                return true;
+            }
+
+            try {
+                await invoke('set_google_calendar_credentials', {
+                    clientId: parsed.clientId,
+                    clientSecret: parsed.clientSecret || null,
+                    calendarId: parsed.calendarId,
+                });
+                addAssistantResponse('Ho aggiornato le credenziali Google. Avvio ora il collegamento.');
+                return await startGoogleDeviceFlowWithPrompt();
+            } catch (error) {
+                console.error('Errore aggiornamento credenziali Google:', error);
+                showCalendarStatus('Credenziali Google non valide', true);
+                addAssistantResponse('Le credenziali Google non sono valide. Controlla il Client ID.');
+                return true;
+            }
+        }
+
+        return true;
+    }
+
+    // Outlook flow (invariato)
+    if (/disconnetti|scollega|rimuovi|dimentica/.test(normalized)) {
+        try {
+            clearOutlookPollTimer();
+            await invoke('disconnect_outlook_calendar');
+            await refreshCalendarIntegrationsStatus({ silent: true });
+            addAssistantResponse('Ho disconnesso Outlook dal calendario.');
+        } catch (error) {
+            console.error('Errore durante la disconnessione di Outlook:', error);
+            showCalendarStatus('Impossibile disconnettere Outlook', true);
+            addAssistantResponse('Non sono riuscito a disconnettere Outlook. Riprova più tardi.');
+        }
+        return true;
+    }
+
+    if (/mostra|lista|elenca|dammi|visualizza/.test(normalized) && /event/i.test(normalized)) {
+        await refreshCalendarIntegrationsStatus({ silent: true });
+        if (!state.integrations.outlook.connected) {
+            addAssistantResponse('Outlook non risulta collegato. Puoi chiedermi "Collega Outlook" per avviare la procedura.');
+            return true;
+        }
+        try {
+            const events = await invoke('list_outlook_calendar_events', { limit: 10 });
+            addAssistantResponse(buildOutlookEventsSummary(events));
+        } catch (error) {
+            console.error('Errore durante il recupero degli eventi Outlook:', error);
+            showCalendarStatus('Impossibile ottenere gli eventi Outlook', true);
+            addAssistantResponse('Non riesco a leggere gli eventi da Outlook in questo momento.');
+        }
+        return true;
+    }
+
+    if (/collega|connetti|configura|autorizza|sincronizza/.test(normalized)) {
+        const status = await refreshCalendarIntegrationsStatus({ silent: true });
+        if (!status || !status.outlook) {
+            addAssistantResponse('Non riesco a verificare lo stato di Outlook. Riprova più tardi.');
+            return true;
+        }
+
+        if (!state.integrations.outlook.configured) {
+            state.pendingIntegrationStep = 'outlook_credentials';
+            addAssistantResponse('Per collegare Outlook ho bisogno del Client ID dell\'app registrata e, se necessario, del tenant. Inviami un messaggio del tipo "Client Outlook: <client_id> Tenant: <tenant>".');
+            return true;
+        }
+
+        if (state.integrations.outlook.connected) {
+            addAssistantResponse('Outlook risulta già collegato. Posso comunque mostrare o sincronizzare gli eventi se necessario.');
+            return true;
+        }
+
+        if (state.integrations.outlook.pending) {
+            const link = state.integrations.outlook.verificationUri
+                ? `[Clicca qui per autorizzare Outlook Calendar](${state.integrations.outlook.verificationUri})`
+                : (state.integrations.outlook.message || 'Attendo che tu autorizzi la connessione su Microsoft.');
+            const codeFallback = state.integrations.outlook.userCode
+                ? `Se Microsoft ti chiede un codice, usa: \`${state.integrations.outlook.userCode}\`.`
+                : '';
+            addAssistantResponse([link, codeFallback].filter(Boolean).join('\n'));
+            scheduleOutlookPoll(state.integrations.outlook.interval || 5);
+            return true;
+        }
+
+        return await startOutlookDeviceFlowWithPrompt();
+    }
+
+    if (/stato|verifica|controlla/.test(normalized)) {
+        const status = await refreshCalendarIntegrationsStatus({ silent: true });
+        if (!status || !status.outlook) {
+            addAssistantResponse('Non riesco a ottenere lo stato attuale di Outlook.');
+            return true;
+        }
+
+        if (state.integrations.outlook.connected) {
+            addAssistantResponse('Outlook è collegato e pronto per sincronizzare il calendario.');
+        } else if (state.integrations.outlook.pending) {
+            const link = state.integrations.outlook.verificationUri
+                ? `[Clicca qui per autorizzare Outlook Calendar](${state.integrations.outlook.verificationUri})`
+                : 'Sto ancora attendendo l\'autorizzazione su Outlook.';
+            const codeFallback = state.integrations.outlook.userCode
+                ? `Se Microsoft ti chiede un codice, usa: \`${state.integrations.outlook.userCode}\`.`
+                : '';
+            addAssistantResponse([link, codeFallback].filter(Boolean).join('\n'));
+        } else if (state.integrations.outlook.configured) {
+            addAssistantResponse('Ho le credenziali ma Outlook non è ancora autorizzato. Scrivi "Collega Outlook" per avviare il codice di autorizzazione.');
+        } else {
+            addAssistantResponse('Outlook non è configurato. Forniscimi Client ID e tenant per procedere.');
+        }
+        return true;
+    }
+
+    if (normalized.includes('client') && normalized.includes('tenant')) {
+        const parsed = parseOutlookCredentials(text);
+        if (!parsed) {
+            addAssistantResponse('Non ho riconosciuto il formato delle credenziali. Usa: "Client Outlook: <client_id> Tenant: <tenant>".');
+            return true;
+        }
+
+        try {
+            await invoke('set_outlook_calendar_credentials', {
+                clientId: parsed.clientId,
+                tenant: parsed.tenant,
+            });
+            addAssistantResponse('Ho aggiornato le credenziali Outlook. Avvio ora il collegamento.');
+            return await startOutlookDeviceFlowWithPrompt();
+        } catch (error) {
+            console.error('Errore aggiornamento credenziali Outlook:', error);
+            showCalendarStatus('Credenziali Outlook non valide', true);
+            addAssistantResponse('Le credenziali Outlook non sono valide. Controlla Client ID e tenant.');
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function normalizeTitleForComparison(title) {
@@ -647,6 +1278,20 @@ function isDuplicateCalendarEvent(candidate) {
     });
 }
 
+async function syncEventToIntegrations(eventId) {
+    if (!eventId) return;
+    const hasOutlook = Boolean(state.integrations.outlook?.connected);
+    const hasGoogle = Boolean(state.integrations.google?.connected);
+    if (!hasOutlook && !hasGoogle) return;
+
+    try {
+        await invoke('sync_calendar_event_to_integrations', { id: eventId });
+    } catch (error) {
+        console.warn('Impossibile sincronizzare l\'evento con le integrazioni calendario:', error);
+        showCalendarStatus('Evento salvato localmente ma non sincronizzato con il calendario remoto', true);
+    }
+}
+
 async function autoCaptureCalendarEvents(text) {
     if (!text || text.length < 6) return;
 
@@ -661,7 +1306,7 @@ async function autoCaptureCalendarEvents(text) {
         }
 
         try {
-            await invoke('add_calendar_event', {
+            const eventId = await invoke('add_calendar_event', {
                 event: {
                     title: candidate.title,
                     description: candidate.description,
@@ -671,6 +1316,7 @@ async function autoCaptureCalendarEvents(text) {
                 },
             });
             added += 1;
+            await syncEventToIntegrations(eventId);
         } catch (error) {
             console.warn('Impossibile aggiungere evento al calendario:', error);
             showCalendarStatus('Errore durante il salvataggio di un evento', true);
@@ -1420,6 +2066,21 @@ function addMessage(role, content, timestamp = null) {
     scrollToBottom();
 }
 
+function addAssistantMessage(content) {
+    if (!content) return;
+    addMessage('assistant', content, getTimestamp());
+}
+
+function addAssistantResponse(content) {
+    if (!content) return;
+    addAssistantMessage(content);
+    state.conversation.push({
+        role: 'assistant',
+        content,
+        hidden: false,
+    });
+}
+
 function addLoadingIndicator() {
     const indicator = document.createElement('div');
     indicator.className = 'loading-indicator';
@@ -1527,6 +2188,21 @@ async function sendMessage() {
 
     await saveCurrentConversation({ force: true });
     await autoCaptureCalendarEvents(text);
+
+    const handledIntegration = await handleCalendarIntegrationCommand(text);
+    if (handledIntegration) {
+        await saveCurrentConversation({ force: true });
+        if (text) {
+            state.messageHistory.push(text);
+            state.messageHistoryIndex = -1;
+        }
+        elements.messageInput.value = '';
+        state.attachedFiles = [];
+        updateAttachedFiles();
+        updateSendButton();
+        state.isProcessing = false;
+        return;
+    }
 
     if (text) {
         state.messageHistory.push(text);
@@ -2441,6 +3117,7 @@ async function init() {
     await loadSettings();
     await loadMemory();
     await loadCalendarEventsFromStore();
+    await refreshCalendarIntegrationsStatus({ silent: true });
     renderHistoryList();
     checkForUpdates();
     await scanNetwork();

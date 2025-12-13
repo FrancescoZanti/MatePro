@@ -1,5 +1,39 @@
 # Changelog - MatePro
 
+## [0.0.16] - Calendario Locale & Integrazioni Calendario (13 Dicembre 2025)
+
+### 🎉 Novità Principali
+
+#### Calendario Locale (auto-capture + export)
+- **NUOVO:** Rilevamento automatico degli impegni dai messaggi e salvataggio nel calendario locale
+- Sidebar calendario con lista eventi, eliminazione rapida e notifiche di stato
+- **Export ICS:** esportazione degli eventi in formato iCalendar (`calendar.ics`)
+
+#### Integrazione Outlook (Microsoft Graph) — workflow via chat
+- **NUOVO:** Collegamento a Outlook Calendar tramite OAuth Authorization Code + **PKCE (S256)** con redirect loopback locale
+- UX migliorata: MatePro fornisce un **link cliccabile** “Clicca qui per autorizzare…” e completa il collegamento automaticamente dopo l’ok nel browser
+- Configurazione conversazionale: richiesta credenziali e guida step-by-step senza pannelli dedicati
+- Comandi chat supportati: collegare/configurare, verificare stato, elencare eventi, disconnettere
+- Sync: i nuovi eventi catturati localmente vengono inviati a Outlook quando l’account è collegato
+
+#### Integrazione Google Calendar — workflow via chat
+- **NUOVO:** Collegamento a Google Calendar tramite OAuth Authorization Code + **PKCE (S256)** con redirect loopback locale
+- Configurazione conversazionale: richiesta **solo Client ID** (il Client Secret non è necessario con PKCE)
+- UX migliorata: MatePro fornisce un **link cliccabile** “Clicca qui per autorizzare…” e completa il collegamento automaticamente dopo l’ok nel browser
+- Comandi chat supportati: collegare/configurare, verificare stato, elencare eventi, disconnettere
+- Sync: i nuovi eventi catturati localmente vengono inviati a Google Calendar quando l’account è collegato
+
+### 💾 Persistenza Locale
+- Nuovi file in `~/.local/share/MatePro/`:
+  - `calendar.json` per gli eventi
+  - `calendar_integrations.json` per stato/credenziali integrazioni (token e stato OAuth/PKCE)
+
+### 🔧 Backend / API
+- Nuovo modulo Rust `calendar_integration.rs` con integrazioni calendario:
+  - Outlook (Microsoft Graph): PKCE loopback, refresh token, list/create eventi
+  - Google Calendar API: PKCE loopback, refresh token, list/create eventi
+- Nuovi comandi Tauri per stato integrazioni, avvio/poll collegamento OAuth e sincronizzazione eventi verso calendari remoti
+
 ## [0.0.12] - Memoria Locale e Sistema Prompt (Dicembre 2025)
 
 ### 🎉 Novità Principali

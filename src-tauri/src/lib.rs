@@ -3,6 +3,7 @@
 
 pub mod agent;
 pub mod aiconnect;
+pub mod calendar_integration;
 pub mod local_storage;
 pub mod mcp_sql;
 

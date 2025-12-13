@@ -6,9 +6,9 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/FrancescoZanti/MatePro/releases)
 [![Release](https://github.com/FrancescoZanti/MatePro/actions/workflows/release.yml/badge.svg)](https://github.com/FrancescoZanti/MatePro/actions/workflows/release.yml)
 
-MatePro è un client desktop multipiattaforma per l'interazione con modelli LLM serviti da Ollama. L'applicazione combina un'interfaccia grafica curata con funzionalità agentiche complete, integrate da strumenti dedicati alla gestione del sistema, del web e dei dati aziendali.
+MatePro è un client desktop multipiattaforma per l'interazione con modelli LLM (es. Ollama). L'applicazione combina un'interfaccia conversazionale moderna con funzionalità agentiche (file, shell, web, SQL) e un **calendario integrato** con sincronizzazione verso **Google Calendar** e **Outlook Calendar**.
 
-> **Stato del progetto:** `v0.0.12`. Il codice attivo risiede in `src-tauri/` (Tauri v2). Le directory `legacy-egui/` e `legacy-ui/` sono mantenute unicamente per archivio storico.
+> **Stato del progetto:** `v0.0.16`. Il backend Rust vive in `src-tauri/` (Tauri v2). Il frontend web distribuito dall'app è in `legacy-ui/` (vedi `src-tauri/tauri.conf.json`).
 
 ![MatePro Screenshot](.github/images/matepro-main.png)
 
@@ -21,12 +21,12 @@ MatePro è un client desktop multipiattaforma per l'interazione con modelli LLM 
 
 ## Architettura del Progetto
 
-- `src-tauri/` – codice principale (frontend Tauri con backend Rust).
-- `legacy-egui/` – implementazione precedente in egui (deprecata).
-- `legacy-ui/` – asset HTML/CSS legacy (non più mantenuti).
+- `src-tauri/` – backend Rust + configurazione Tauri v2.
+- `legacy-ui/` – frontend web (HTML/CSS/JS) caricato da Tauri come `frontendDist`.
+- `legacy-egui/` – implementazione precedente in egui (archivio).
 - `packaging/` – materiale per la distribuzione dei pacchetti.
 
-Le attività di sviluppo devono concentrarsi su `src-tauri/`.
+Le attività di sviluppo in genere si concentrano su `src-tauri/src/` (backend) e su `legacy-ui/` (frontend).
 
 ## Funzionalità
 
@@ -37,6 +37,100 @@ Le attività di sviluppo devono concentrarsi su `src-tauri/`.
 - **Tool MCP SQL Server**: connessione in sola lettura a SQL Server con autenticazione Windows/SQL, esecuzione di query, generazione report e supporto per credenziali di dominio.
 - **Automazione avanzata**: loop agentico autonomo, riconoscimento di intenti complessi, gestione di più step operativi e richieste di conferma per azioni sensibili.
 - **Sicurezza e osservabilità**: autorizzazioni granulari, log live, conferme esplicite per operazioni critiche e guida contestuale agli strumenti disponibili.
+
+### Calendario (locale + cloud)
+
+- **Calendario locale:** MatePro può riconoscere automaticamente impegni nei messaggi e salvarli in un calendario locale.
+- **Export ICS:** esportazione eventi in formato iCalendar.
+- **Sync cloud:** gli eventi locali possono essere inviati ai calendari remoti (Google / Outlook) quando l'account è collegato.
+
+#### Dove vengono salvati i dati
+
+Su Linux, i file vengono salvati tipicamente in `~/.local/share/MatePro/`:
+
+- `calendar.json` — eventi locali
+- `calendar_integrations.json` — configurazione e token delle integrazioni calendario
+
+> Nota: i token di accesso/refresh sono salvati localmente per consentire il refresh automatico e la sincronizzazione.
+
+## Configurazione integrazioni calendario (Google + Microsoft Entra)
+
+MatePro usa OAuth 2.0 **Authorization Code + PKCE (S256)** con redirect loopback su `http://localhost:<porta>/`.
+
+### 1) Google Calendar (Google Cloud Console)
+
+Prerequisiti:
+
+- Un progetto Google Cloud
+- API **Google Calendar API** abilitata
+
+Passi:
+
+1. Crea (o seleziona) un progetto su Google Cloud Console.
+2. Abilita **Google Calendar API**.
+3. Configura **OAuth consent screen** (External/Internal a seconda del tuo account). In modalità “Testing” aggiungi il tuo account tra i “Test users”.
+4. Crea credenziali: **OAuth client ID** → tipo **Desktop app**.
+5. Copia il **Client ID**.
+
+In MatePro (via chat):
+
+- Scrivi: `Collega Google Calendar`
+- Quando richiesto, invia: `Client Google: <client_id> CalendarId: primary`
+- MatePro risponderà con un link: “Clicca qui per autorizzare…”. Dopo l'ok nel browser, la chat confermerà il collegamento automaticamente.
+
+Note utili:
+
+- `CalendarId` è facoltativo. Il default è `primary`.
+- Lo scope usato è `https://www.googleapis.com/auth/calendar.events` (gestione eventi).
+
+### 2) Outlook Calendar (Microsoft Entra ID / Microsoft Graph)
+
+Prerequisiti:
+
+- Un tenant Microsoft Entra ID (anche personale va bene)
+- Un'app registrata su Entra ID
+
+Passi (Entra Admin Center → App registrations):
+
+1. **Register an application**.
+2. Scegli “Supported account types” (consigliato: **Accounts in any organizational directory and personal Microsoft accounts** se vuoi supportare più account; altrimenti single tenant).
+3. Vai su **Authentication**:
+   - Aggiungi una piattaforma **Mobile and desktop applications**.
+   - Aggiungi come Redirect URI: `http://localhost` (Entra tratta `http://localhost` come redirect loopback per app pubbliche).
+   - Abilita **Allow public client flows** (Public client).
+4. Vai su **API permissions** → Microsoft Graph:
+   - Aggiungi permessi delegati: `Calendars.ReadWrite` e `offline_access`.
+   - Se richiesto in ambiente aziendale, fai “Grant admin consent”.
+5. Copia **Application (client) ID**.
+
+In MatePro (via chat):
+
+- Scrivi: `Collega Outlook`
+- Quando richiesto, invia: `Client Outlook: <client_id> Tenant: common`
+  - `Tenant` è facoltativo. Valori tipici: `common`, `organizations`, `consumers` oppure il tenant ID.
+- MatePro risponderà con un link: “Clicca qui per autorizzare…”. Dopo l'ok nel browser, la chat confermerà il collegamento automaticamente.
+
+Note utili:
+
+- Lo scope richiesto include `offline_access` per ottenere refresh token.
+- Se Entra segnala un mismatch di redirect, verifica di avere `http://localhost` configurato in **Authentication** e che l'app sia impostata come **public client**.
+
+## Troubleshooting OAuth
+
+### Redirect mismatch (Google o Microsoft)
+
+- **Google:** se vedi errori tipo *redirect_uri_mismatch*, assicurati di aver creato un OAuth Client di tipo **Desktop app** (non “Web application”). Con “Desktop app” Google gestisce i redirect loopback senza richiedere l’elenco completo di URL.
+- **Microsoft Entra:** se l’errore riguarda `redirect_uri`, verifica in **Authentication** di avere una piattaforma **Mobile and desktop applications** e che tra i redirect ci sia `http://localhost`. Inoltre abilita **Allow public client flows**.
+
+### Google OAuth consent screen in “Testing”
+
+- Se l’app è in modalità **Testing**, solo gli utenti aggiunti in **Test users** possono autorizzare il consenso.
+- Se la schermata di consenso o l’autorizzazione falliscono subito, aggiungi il tuo account Google tra i test user e riprova.
+
+### Microsoft Graph permissions / Admin consent
+
+- Se dopo l’autorizzazione le chiamate API falliscono con errori tipo *insufficient privileges*, controlla in **API permissions** che l’app abbia permessi **Delegated** per `Calendars.ReadWrite` e `offline_access`.
+- In ambienti aziendali, potrebbe essere necessario un amministratore per eseguire **Grant admin consent**.
 
 ### Documentazione di dettaglio
 
@@ -120,6 +214,12 @@ cargo tauri dev
 - `anyhow` – gestione avanzata degli errori.
 - `local-ip-address` – rilevamento della rete locale.
 - `tiberius` – driver SQL Server nativo.
+
+### OAuth / Calendario
+
+- `reqwest` – chiamate a Microsoft Graph e Google Calendar API
+- `sha2` + `base64` – PKCE (S256)
+- `url` – costruzione e parsing URL di autorizzazione
 
 ## Procedura di Release
 
