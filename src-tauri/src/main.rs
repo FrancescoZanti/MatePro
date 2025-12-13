@@ -15,8 +15,9 @@ use aiconnect::{
 };
 use anyhow::Result;
 use calamine::{open_workbook, Ods, Reader, Xls, Xlsx};
+use chrono::{DateTime, Utc};
 use local_storage::{
-    CustomSystemPrompt, LocalMemory, MemoryMessage,
+    CalendarEvent, CustomSystemPrompt, LocalMemory, MemoryMessage,
 };
 use lopdf::Document;
 use serde::{Deserialize, Serialize};
@@ -114,6 +115,17 @@ struct UserProfile {
     username: String,
     display_name: Option<String>,
     primary_language: Option<String>,
+}
+
+// Calendar input structures for commands
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct CalendarEventInput {
+    pub id: Option<String>,
+    pub title: String,
+    pub description: Option<String>,
+    pub start: String,
+    pub end: Option<String>,
+    pub source_text: Option<String>,
 }
 
 // ============ STATE ============
@@ -926,6 +938,84 @@ fn get_data_directory() -> Result<String, String> {
     local_storage::get_data_directory().map_err(|e| e.to_string())
 }
 
+// ============ CALENDAR COMMANDS ============
+
+fn parse_datetime(value: &str) -> Result<DateTime<Utc>, String> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .map_err(|e| format!("Data non valida: {}", e))
+}
+
+#[tauri::command]
+fn load_calendar_events() -> Result<Vec<CalendarEvent>, String> {
+    local_storage::load_calendar_events().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn add_calendar_event(event: CalendarEventInput) -> Result<String, String> {
+    let start = parse_datetime(&event.start)?;
+    let end = match event.end {
+        Some(ref end_str) if !end_str.is_empty() => Some(parse_datetime(end_str)?),
+        _ => None,
+    };
+
+    local_storage::add_calendar_event(
+        event.title,
+        event.description,
+        start,
+        end,
+        event.source_text,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_calendar_event(event: CalendarEventInput) -> Result<(), String> {
+    let id = event
+        .id
+        .clone()
+        .ok_or_else(|| "ID evento mancante".to_string())?;
+    let start = parse_datetime(&event.start)?;
+    let end = match event.end {
+        Some(ref end_str) if !end_str.is_empty() => Some(parse_datetime(end_str)?),
+        _ => None,
+    };
+
+    let current_events = local_storage::load_calendar_events().map_err(|e| e.to_string())?;
+    let original = current_events
+        .into_iter()
+        .find(|ev| ev.id == id)
+        .ok_or_else(|| "Evento non trovato".to_string())?;
+
+    let updated = CalendarEvent {
+        id: original.id,
+        title: event.title,
+        description: event.description,
+        start,
+        end,
+        source_text: event.source_text,
+        created_at: original.created_at,
+        updated_at: Utc::now(),
+    };
+
+    local_storage::update_calendar_event(updated).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_calendar_event(id: String) -> Result<(), String> {
+    local_storage::delete_calendar_event(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_calendar_events() -> Result<(), String> {
+    local_storage::clear_calendar_events().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn export_calendar_to_ics() -> Result<String, String> {
+    local_storage::export_calendar_to_ics().map_err(|e| e.to_string())
+}
+
 // ============ AICONNECT COMMANDS ============
 
 /// Discovery result for AIConnect and Ollama services
@@ -1169,6 +1259,13 @@ fn main() {
             delete_conversation_from_memory,
             clear_all_conversations,
             get_data_directory,
+            // Calendar commands
+            load_calendar_events,
+            add_calendar_event,
+            update_calendar_event,
+            delete_calendar_event,
+            clear_calendar_events,
+            export_calendar_to_ics,
             // AIConnect commands
             scan_services,
             get_backend_config,

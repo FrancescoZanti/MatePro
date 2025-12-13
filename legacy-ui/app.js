@@ -32,6 +32,10 @@ const state = {
     },
     currentConversationId: null,
     memoryConversations: [],
+    memoryContext: '',
+    memoryContextInjected: false,
+    calendarEvents: [],
+    calendarStatusTimeout: null,
 };
 
 // ============ DOM ELEMENTS ============
@@ -71,6 +75,10 @@ const elements = {
     sendBtn: document.getElementById('send-btn'),
     fileInput: document.getElementById('file-input'),
     backendIndicator: document.getElementById('backend-indicator'),
+    calendarList: document.getElementById('calendar-list'),
+    calendarStatus: document.getElementById('calendar-status'),
+    exportCalendarBtn: document.getElementById('export-calendar-btn'),
+    clearCalendarBtn: document.getElementById('clear-calendar-btn'),
     
     // SQL Modal
     sqlModal: document.getElementById('sql-modal'),
@@ -148,6 +156,62 @@ function normalizeLanguageCode(tag) {
     return parts[0] || null;
 }
 
+// Memory context configuration to avoid overloading the prompt
+const MEMORY_CONTEXT_CONFIG = {
+    maxConversations: 3,
+    maxMessagesPerConversation: 4,
+    maxCharsPerMessage: 180,
+    maxHighlights: 8,
+};
+
+const MEMORY_HIGHLIGHT_PATTERNS = [
+    /\bmi piace\b/i,
+    /\bmi ador[oa]\b/i,
+    /\bador[oa]\b/i,
+    /\bamo\b/i,
+    /\bpreferisco\b/i,
+    /\bnon sopporto\b/i,
+    /\bodio\b/i,
+    /\ballergic[oa]\b/i,
+    /\bintollerante\b/i,
+    /\bdevo\b/i,
+    /\bho bisogno\b/i,
+    /\bho\s+(una|un|il|la)\b/i,
+    /\bdomani\b/i,
+    /\bsettimana prossima\b/i,
+    /\btra\s+\d+\s+(giorni|settimane|mesi)\b/i,
+    /\bsto\s+(lavorando|preparando|studiando)\b/i,
+    /\bvado\b/i,
+    /\bparteciper[òo]\b/i,
+    /\bho\s+una\s+(gara|maratona|mezza maratona|visita|riunione)\b/i,
+];
+
+const MONTHS_IT = {
+    gennaio: 0,
+    febbraio: 1,
+    marzo: 2,
+    aprile: 3,
+    maggio: 4,
+    giugno: 5,
+    luglio: 6,
+    agosto: 7,
+    settembre: 8,
+    ottobre: 9,
+    novembre: 10,
+    dicembre: 11,
+};
+
+const WEEK_DAYS_IT = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
+
+const RELATIVE_KEYWORDS = {
+    oggi: 0,
+    stasera: 0,
+    stanotte: 0,
+    stamattina: 0,
+    domani: 1,
+    dopodomani: 2,
+};
+
 // ============ UTILITIES ============
 
 function normalizeTextForMatch(text) {
@@ -155,6 +219,468 @@ function normalizeTextForMatch(text) {
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase();
+}
+
+function sanitizeMemoryText(text) {
+    if (!text || typeof text !== 'string') return '';
+    return text.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
+}
+
+function truncateMemoryText(text, maxLength) {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function extractMemoryHighlights(conversations) {
+    const highlights = [];
+    const seen = new Set();
+
+    conversations.forEach(conv => {
+        (conv.messages || [])
+            .filter(msg => msg && !msg.hidden && msg.role === 'user')
+            .forEach(msg => {
+                const cleaned = sanitizeMemoryText(msg.content || '');
+                if (!cleaned) return;
+
+                const sentences = cleaned
+                    .split(/[.!?\n]+/)
+                    .map(sentence => sentence.trim())
+                    .filter(Boolean);
+
+                sentences.forEach(sentence => {
+                    if (sentence.length < 12) return;
+                    const normalized = sentence.toLowerCase();
+                    if (seen.has(normalized)) return;
+
+                    const matchesKeyword = MEMORY_HIGHLIGHT_PATTERNS.some(pattern => pattern.test(sentence));
+                    if (!matchesKeyword) return;
+
+                    seen.add(normalized);
+                    highlights.push(truncateMemoryText(sentence, 220));
+                });
+            });
+    });
+
+    return highlights.slice(0, MEMORY_CONTEXT_CONFIG.maxHighlights);
+}
+
+function buildMemoryContext() {
+    if (!Array.isArray(state.memoryConversations) || state.memoryConversations.length === 0) {
+        return '';
+    }
+
+    const conversations = state.memoryConversations
+        .filter(conv => conv && conv.id !== state.currentConversationId)
+        .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+        .slice(0, MEMORY_CONTEXT_CONFIG.maxConversations);
+
+    const segments = [];
+    const highlights = extractMemoryHighlights(conversations);
+
+    if (highlights.length > 0) {
+        segments.push('PROMEMORIA UTENTE:');
+        highlights.forEach(item => {
+            segments.push(`• ${item}`);
+        });
+        segments.push('');
+    }
+
+    conversations.forEach(conv => {
+        const updatedAt = conv.updated_at ? new Date(conv.updated_at) : null;
+        const dateLabel = updatedAt
+            ? `${updatedAt.toLocaleDateString()} ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            : 'data sconosciuta';
+
+        const title = sanitizeMemoryText(conv.title || 'Conversazione precedente');
+        segments.push(`Conversazione "${title}" (${dateLabel})`);
+
+        const visibleMessages = (conv.messages || [])
+            .filter(msg => msg && !msg.hidden)
+            .slice(-MEMORY_CONTEXT_CONFIG.maxMessagesPerConversation);
+
+        visibleMessages.forEach(msg => {
+            const roleLabel = msg.role === 'assistant' ? 'Assistente' : 'Utente';
+            const cleanedContent = truncateMemoryText(
+                sanitizeMemoryText(msg.content || ''),
+                MEMORY_CONTEXT_CONFIG.maxCharsPerMessage
+            );
+
+            if (cleanedContent) {
+                segments.push(`- ${roleLabel}: ${cleanedContent}`);
+            }
+        });
+
+        segments.push('');
+    });
+
+    return segments.join('\n').trim();
+}
+
+function updateMemoryContext() {
+    state.memoryContext = buildMemoryContext();
+}
+
+function showCalendarStatus(message, isError = false) {
+    if (!elements.calendarStatus) return;
+
+    elements.calendarStatus.textContent = message;
+    elements.calendarStatus.classList.remove('hidden');
+    elements.calendarStatus.classList.toggle('error', isError);
+
+    if (state.calendarStatusTimeout) {
+        clearTimeout(state.calendarStatusTimeout);
+    }
+
+    state.calendarStatusTimeout = setTimeout(() => {
+        if (elements.calendarStatus) {
+            elements.calendarStatus.classList.add('hidden');
+        }
+    }, 4000);
+}
+
+function normalizeTitleForComparison(title) {
+    return (title || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
+function formatEventDateRange(startIso, endIso) {
+    const start = new Date(startIso);
+    const end = endIso ? new Date(endIso) : new Date(start.getTime() + 60 * 60 * 1000);
+    const sameDay = start.toDateString() === end.toDateString();
+    const dateOptions = { day: '2-digit', month: 'short', year: 'numeric' };
+    const timeOptions = { hour: '2-digit', minute: '2-digit' };
+
+    const datePart = start.toLocaleDateString(undefined, dateOptions);
+    if (sameDay) {
+        const startTime = start.toLocaleTimeString(undefined, timeOptions);
+        const endTime = end.toLocaleTimeString(undefined, timeOptions);
+        return `${datePart} · ${startTime} - ${endTime}`;
+    }
+
+    const endDatePart = end.toLocaleDateString(undefined, dateOptions);
+    return `${datePart} → ${endDatePart}`;
+}
+
+function renderCalendarList() {
+    if (!elements.calendarList) return;
+
+    const events = Array.isArray(state.calendarEvents)
+        ? [...state.calendarEvents].sort((a, b) => new Date(a.start) - new Date(b.start))
+        : [];
+
+    if (elements.clearCalendarBtn) {
+        elements.clearCalendarBtn.disabled = events.length === 0;
+    }
+    if (elements.exportCalendarBtn) {
+        elements.exportCalendarBtn.disabled = events.length === 0;
+    }
+
+    if (events.length === 0) {
+        elements.calendarList.innerHTML = `
+            <div class="empty-calendar">
+                <p>Nessun evento registrato</p>
+                <small>Quando segnali un impegno, verrà aggiunto automaticamente qui</small>
+            </div>
+        `;
+        return;
+    }
+
+    elements.calendarList.innerHTML = events
+        .map(event => {
+            const description = (event.description || '').trim();
+            return `
+                <div class="calendar-event" data-id="${event.id}">
+                    <div class="calendar-event-header">
+                        <div class="calendar-event-title">${escapeHtml(event.title)}</div>
+                        <div class="calendar-event-date">${escapeHtml(formatEventDateRange(event.start, event.end))}</div>
+                    </div>
+                    ${description ? `<div class="calendar-event-details">${escapeHtml(description)}</div>` : ''}
+                    <div class="calendar-event-actions">
+                        <button class="calendar-event-delete" data-id="${event.id}" title="Elimina evento">Elimina</button>
+                    </div>
+                </div>
+            `;
+        })
+        .join('');
+
+    elements.calendarList.querySelectorAll('.calendar-event-delete').forEach(btn => {
+        btn.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            const id = btn.dataset.id;
+            if (!id) return;
+            if (!confirm('Eliminare questo evento?')) return;
+            await deleteCalendarEventById(id);
+        });
+    });
+}
+
+async function loadCalendarEventsFromStore() {
+    try {
+        const events = await invoke('load_calendar_events');
+        state.calendarEvents = Array.isArray(events) ? events : [];
+    } catch (error) {
+        console.warn('Impossibile caricare il calendario:', error);
+        state.calendarEvents = [];
+        showCalendarStatus('Errore durante il caricamento del calendario', true);
+    }
+
+    renderCalendarList();
+}
+
+async function deleteCalendarEventById(id) {
+    try {
+        await invoke('delete_calendar_event', { id });
+        await loadCalendarEventsFromStore();
+        showCalendarStatus('Evento eliminato');
+    } catch (error) {
+        console.warn('Impossibile eliminare l\'evento:', error);
+        showCalendarStatus('Errore durante l\'eliminazione', true);
+    }
+}
+
+async function clearAllCalendarEvents() {
+    if (!confirm('Sei sicuro di voler eliminare tutti gli eventi del calendario?')) {
+        return;
+    }
+
+    try {
+        await invoke('clear_calendar_events');
+        state.calendarEvents = [];
+        renderCalendarList();
+        showCalendarStatus('Calendario svuotato');
+    } catch (error) {
+        console.warn('Impossibile svuotare il calendario:', error);
+        showCalendarStatus('Errore durante lo svuotamento', true);
+    }
+}
+
+async function exportCalendarAsIcs() {
+    try {
+        const path = await invoke('export_calendar_to_ics');
+        showCalendarStatus(`Calendario esportato in ${path}`);
+    } catch (error) {
+        console.warn('Impossibile esportare il calendario:', error);
+        showCalendarStatus('Errore durante l\'esportazione', true);
+    }
+}
+
+function getNextWeekday(baseDate, targetWeekdayIndex) {
+    const date = new Date(baseDate.getTime());
+    const currentIndex = date.getDay();
+    let diff = targetWeekdayIndex - currentIndex;
+    if (diff <= 0) {
+        diff += 7;
+    }
+    date.setDate(date.getDate() + diff);
+    return date;
+}
+
+function parseFullDate(day, monthIndex, year, reference) {
+    const date = new Date(reference.getTime());
+    date.setHours(9, 0, 0, 0);
+    date.setMonth(monthIndex);
+    date.setDate(day);
+    if (typeof year === 'number') {
+        const normalizedYear = year < 100 ? 2000 + year : year;
+        date.setFullYear(normalizedYear);
+    }
+
+    if (typeof year !== 'number' && date < reference) {
+        date.setFullYear(date.getFullYear() + 1);
+    }
+
+    if (date < new Date(reference.getTime() - 24 * 60 * 60 * 1000)) {
+        return null;
+    }
+
+    return date;
+}
+
+function applyTimeHints(date, sentence) {
+    if (!date) return null;
+
+    const timeMatch = sentence.match(/(?:alle|ore|h)\s*(\d{1,2})(?:[:.](\d{2}))?/i);
+    if (timeMatch) {
+        const hours = Math.min(23, parseInt(timeMatch[1], 10));
+        const minutes = timeMatch[2] ? Math.min(59, parseInt(timeMatch[2], 10)) : 0;
+        date.setHours(hours, minutes, 0, 0);
+        return date;
+    }
+
+    if (/mattin/i.test(sentence)) {
+        date.setHours(9, 0, 0, 0);
+    } else if (/pomeriggio/i.test(sentence)) {
+        date.setHours(15, 0, 0, 0);
+    } else if (/sera|stasera/i.test(sentence)) {
+        date.setHours(19, 0, 0, 0);
+    } else if (/notte|stanotte/i.test(sentence)) {
+        date.setHours(22, 0, 0, 0);
+    } else {
+        date.setHours(9, 0, 0, 0);
+    }
+
+    return date;
+}
+
+function extractDateFromSentence(sentence, reference) {
+    const normalized = sentence.toLowerCase();
+    const accentless = normalized.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let date = null;
+
+    for (const [keyword, offset] of Object.entries(RELATIVE_KEYWORDS)) {
+        if (accentless.includes(keyword)) {
+            const candidate = new Date(reference.getTime());
+            candidate.setDate(candidate.getDate() + offset);
+            date = candidate;
+            break;
+        }
+    }
+
+    if (!date) {
+        WEEK_DAYS_IT.forEach((weekday, index) => {
+            if (date) return;
+            const accented = weekday;
+            const plain = weekday.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            if (normalized.includes(accented) || accentless.includes(plain)) {
+                date = getNextWeekday(reference, index);
+            }
+        });
+    }
+
+    if (!date) {
+        const monthRegex = /(?:il\s+)?(\d{1,2})\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)(?:\s+(\d{2,4}))?/i;
+        const match = sentence.match(monthRegex);
+        if (match) {
+            const day = parseInt(match[1], 10);
+            const monthName = match[2].toLowerCase();
+            const year = match[3] ? parseInt(match[3], 10) : undefined;
+            const monthIndex = MONTHS_IT[monthName];
+            if (Number.isInteger(monthIndex)) {
+                date = parseFullDate(day, monthIndex, year, reference);
+            }
+        }
+    }
+
+    if (!date) {
+        const numericRegex = /(?:il\s+)?(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?/;
+        const match = sentence.match(numericRegex);
+        if (match) {
+            const day = parseInt(match[1], 10);
+            const month = parseInt(match[2], 10) - 1;
+            const year = match[3] ? parseInt(match[3], 10) : undefined;
+            date = parseFullDate(day, month, year, reference);
+        }
+    }
+
+    if (date) {
+        return applyTimeHints(date, sentence);
+    }
+
+    return null;
+}
+
+function deriveEventTitle(sentence) {
+    const cleaned = sentence
+        .replace(/(?:io|noi)\s+/, '')
+        .replace(/(?:devo|dovr[oò]|avr[oò]|ho|ci sarà|c'?è)\s+/i, '')
+        .trim();
+    const noTrailing = cleaned.replace(/[.?!]+$/, '').trim();
+    if (noTrailing.length <= 0) {
+        return 'Impegno personale';
+    }
+    if (noTrailing.length <= 60) {
+        return noTrailing.charAt(0).toUpperCase() + noTrailing.slice(1);
+    }
+    return `${noTrailing.slice(0, 57).trimEnd()}…`;
+}
+
+function detectCalendarEntries(text) {
+    if (!text || typeof text !== 'string') return [];
+
+    const reference = new Date();
+    const sentences = text
+        .split(/[.!?\n]+/)
+        .map(sentence => sentence.trim())
+        .filter(Boolean);
+
+    const triggers = /(ho|avr[oò]|devo|parteciper[oò]|partecipo|vado|ci sara|ci sarà|organizzo|ricordami|programma|prenotato|inizia|comincia|allenamento|gara|riunione)/i;
+
+    const candidates = [];
+
+    sentences.forEach(sentence => {
+        if (!triggers.test(sentence)) return;
+        const date = extractDateFromSentence(sentence, reference);
+        if (!date) return;
+
+        const start = new Date(date.getTime());
+        const end = new Date(date.getTime() + 60 * 60 * 1000);
+
+        candidates.push({
+            title: deriveEventTitle(sentence),
+            description: sentence,
+            startIso: start.toISOString(),
+            endIso: end.toISOString(),
+            source: sentence,
+        });
+    });
+
+    return candidates;
+}
+
+function isDuplicateCalendarEvent(candidate) {
+    const candidateTitle = normalizeTitleForComparison(candidate.title);
+    const candidateTime = new Date(candidate.startIso).getTime();
+
+    return state.calendarEvents.some(event => {
+        const storedTitle = normalizeTitleForComparison(event.title);
+        if (storedTitle !== candidateTitle) {
+            return false;
+        }
+        const storedTime = new Date(event.start).getTime();
+        const diffMinutes = Math.abs(storedTime - candidateTime) / (60 * 1000);
+        return diffMinutes <= 90;
+    });
+}
+
+async function autoCaptureCalendarEvents(text) {
+    if (!text || text.length < 6) return;
+
+    const candidates = detectCalendarEntries(text);
+    if (candidates.length === 0) return;
+
+    let added = 0;
+
+    for (const candidate of candidates) {
+        if (isDuplicateCalendarEvent(candidate)) {
+            continue;
+        }
+
+        try {
+            await invoke('add_calendar_event', {
+                event: {
+                    title: candidate.title,
+                    description: candidate.description,
+                    start: candidate.startIso,
+                    end: candidate.endIso,
+                    source_text: candidate.source,
+                },
+            });
+            added += 1;
+        } catch (error) {
+            console.warn('Impossibile aggiungere evento al calendario:', error);
+            showCalendarStatus('Errore durante il salvataggio di un evento', true);
+        }
+    }
+
+    if (added > 0) {
+        await loadCalendarEventsFromStore();
+        showCalendarStatus(added === 1 ? 'Aggiunto 1 evento al calendario' : `Aggiunti ${added} eventi al calendario`);
+    }
 }
 
 function detectNewsQuery(message) {
@@ -966,6 +1492,15 @@ async function sendMessage() {
             systemContent += '\n\n' + toolsDesc;
             systemContent += '\n\n**LINEE GUIDA:**\n- Usa i tool appropriati per le richieste dell\'utente.\n- Se la risposta richiede dati aggiornati o verifiche, esegui `web_search` e integra solo fonti considerate affidabili.\n- Quando ricevi note di ricerca dal backend, trattale come riferimenti da citare in formato [Titolo](URL) indicando il dominio.\n- Riassumi con parole tue e segnala eventuali incongruenze o assenza di dati aggiornati.';
         }
+
+        if (!state.memoryContextInjected && state.memoryContext) {
+            systemContent += '\n\n**MEMORIA UTENTE STORICA:**\n' + state.memoryContext + '\nUtilizza queste note per mantenere coerenza con preferenze, tono e conoscenze condivise. Evita di ripetere le frasi letteralmente, ma rispondi tenendo conto di queste informazioni.';
+            state.memoryContextInjected = true;
+        }
+
+        if (!state.memoryContextInjected) {
+            state.memoryContextInjected = true;
+        }
         
         state.conversation.push({ role: 'user', content: systemContent, hidden: true });
         state.conversation.push({ 
@@ -989,6 +1524,9 @@ async function sendMessage() {
             });
         }
     }
+
+    await saveCurrentConversation({ force: true });
+    await autoCaptureCalendarEvents(text);
 
     if (text) {
         state.messageHistory.push(text);
@@ -1486,16 +2024,21 @@ async function loadMemory() {
     try {
         const memory = await invoke('load_memory');
         state.memoryConversations = memory.conversations || [];
+        updateMemoryContext();
     } catch (error) {
         console.warn('Impossibile caricare la memoria:', error);
         state.memoryConversations = [];
+        state.memoryContext = '';
     }
 }
 
-async function saveCurrentConversation() {
-    // Only save if there are visible messages
+async function saveCurrentConversation(options = {}) {
+    const { force = false } = options;
+
+    // Only save if there are visible messages (unless forced)
     const visibleMessages = state.conversation.filter(m => !m.hidden);
-    if (visibleMessages.length < 2) return;
+    if (!force && visibleMessages.length < 2) return;
+    if (force && visibleMessages.length === 0) return;
     
     // Generate a title from the first user message
     const firstUserMessage = visibleMessages.find(m => m.role === 'user');
@@ -1545,6 +2088,8 @@ async function loadConversationFromMemory(conversationId) {
     state.currentIteration = 0;
     state.pendingToolCalls = [];
     state.currentConversationId = conversationId;
+    state.memoryContextInjected = true;
+    state.memoryContext = buildMemoryContext();
     
     if (conversation.model && elements.modelSelector) {
         state.selectedModel = conversation.model;
@@ -1724,6 +2269,8 @@ async function newChat() {
     state.pendingToolCalls = [];
     state.messageHistoryIndex = -1;
     state.currentConversationId = null;
+    state.memoryContextInjected = false;
+    state.memoryContext = buildMemoryContext();
     
     elements.messages.innerHTML = `
         <div class="empty-state">
@@ -1751,6 +2298,8 @@ async function disconnect() {
     state.greetingShown = false;
     state.messageHistoryIndex = -1;
     state.currentConversationId = null;
+    state.memoryContextInjected = false;
+    state.memoryContext = buildMemoryContext();
     
     showScreen('setup-screen');
     elements.setupError.classList.add('hidden');
@@ -1854,6 +2403,12 @@ function initEventListeners() {
     if (elements.clearHistoryBtn) {
         elements.clearHistoryBtn.addEventListener('click', clearAllConversations);
     }
+    if (elements.clearCalendarBtn) {
+        elements.clearCalendarBtn.addEventListener('click', clearAllCalendarEvents);
+    }
+    if (elements.exportCalendarBtn) {
+        elements.exportCalendarBtn.addEventListener('click', exportCalendarAsIcs);
+    }
     
     // Close modals on outside click
     elements.sqlModal.addEventListener('click', (e) => {
@@ -1885,6 +2440,7 @@ async function init() {
     await loadGreeting();
     await loadSettings();
     await loadMemory();
+    await loadCalendarEventsFromStore();
     renderHistoryList();
     checkForUpdates();
     await scanNetwork();
